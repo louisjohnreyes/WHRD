@@ -1,0 +1,55 @@
+
+import machine
+import dht
+import time
+
+# Pin definitions
+DHT_PIN = machine.Pin(4, machine.Pin.IN, machine.Pin.PULL_UP)
+HEATER_PIN = machine.Pin(16, machine.Pin.OUT)
+HUMIDIFIER_PIN = machine.Pin(17, machine.Pin.OUT)
+
+# Setpoints
+TEMPERATURE_SETPOINT = 25.0  # Celsius
+HUMIDITY_SETPOINT = 60.0    # %
+
+# Initialize DHT sensor
+sensor = dht.DHT22(DHT_PIN)
+
+def read_sensor():
+    """Reads temperature and humidity from the DHT22 sensor."""
+    try:
+        sensor.measure()
+        temperature = sensor.temperature()
+        humidity = sensor.humidity()
+        return temperature, humidity
+    except OSError as e:
+        print("Failed to read sensor:", e)
+        return None, None
+
+def main():
+    """Main loop for the controller."""
+    while True:
+        temperature, humidity = read_sensor()
+        if temperature is not None and humidity is not None:
+            print(f"Temperature: {temperature}°C, Humidity: {humidity}%")
+
+            # Temperature control
+            if temperature < TEMPERATURE_SETPOINT:
+                HEATER_PIN.high()
+                print("Heater ON")
+            else:
+                HEATER_PIN.low()
+                print("Heater OFF")
+
+            # Humidity control
+            if humidity < HUMIDITY_SETPOINT:
+                HUMIDIFIER_PIN.high()
+                print("Humidifier ON")
+            else:
+                HUMIDIFIER_PIN.low()
+                print("Humidifier OFF")
+
+        time.sleep(2)
+
+if __name__ == "__main__":
+    main()
