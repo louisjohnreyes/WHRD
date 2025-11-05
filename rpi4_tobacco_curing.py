@@ -7,11 +7,131 @@
 # pip3 install adafruit-circuitpython-dht
 # pip3 install RPLCD
 
-import RPi.GPIO as GPIO
-import adafruit_dht
+try:
+    import RPi.GPIO as GPIO
+    import board
+    import adafruit_dht
+    from RPLCD.i2c import CharLCD
+except (RuntimeError, ImportError):
+    import mock_gpio as GPIO
+    import mock_board as board
+    import mock_adafruit_dht as adafruit_dht
+    from mock_rplcd import CharLCD
 import time
-import board
-from RPLCD.i2c import CharLCD
+import threading
+import csv
+import os
+from flask import Flask, jsonify, render_template_string
+
+# =============================
+# Flask App Initialization
+# =============================
+app = Flask(__name__)
+
+# =============================
+# Web Server Routes
+# =============================
+@app.route('/api/status', methods=['GET'])
+def get_status():
+    """Returns the current status of the curing process."""
+    status = {
+        "mode": current_mode,
+        "stage": list(CURING_STAGES.keys())[current_stage_index],
+        "temperature": temperature,
+        "humidity": humidity,
+        "target_temperature": target_temperature,
+        "heater_on": heater_on,
+        "fan_on": fan_on,
+        "dehumidifier_on": dehumidifier_on,
+        "buzzer_on": buzzer_on
+    }
+    return jsonify(status)
+
+@app.route('/api/mode', methods=['POST'])
+def set_mode():
+    """Sets the curing mode."""
+    global current_mode
+    current_mode = "MANUAL" if current_mode == "AUTO" else "AUTO"
+    return jsonify({"mode": current_mode})
+
+@app.route('/api/stage', methods=['POST'])
+def set_stage():
+    """Sets the curing stage."""
+    global current_stage_index
+    current_stage_index = (current_stage_index + 1) % len(list(CURING_STAGES.keys()))
+    return jsonify({"stage": list(CURING_STAGES.keys())[current_stage_index]})
+
+@app.route('/')
+def index():
+    """Serves the main HTML page."""
+    return render_template_string(
+        """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Tobacco Curing Control</title>
+            <style>
+                body { font-family: sans-serif; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .status { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+                .status-item { padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
+                .controls { margin-top: 20px; }
+                .controls button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>Tobacco Curing Control</h1>
+                <div class="status">
+                    <div class="status-item"><strong>Mode:</strong> <span id="mode"></span></div>
+                    <div class="status-item"><strong>Stage:</strong> <span id="stage"></span></div>
+                    <div class="status-item"><strong>Temperature:</strong> <span id="temperature"></span> &deg;C</div>
+                    <div class="status-item"><strong>Humidity:</strong> <span id="humidity"></span> %</div>
+                    <div class="status-item"><strong>Target Temp:</strong> <span id="target_temperature"></span> &deg;C</div>
+                    <div class="status-item"><strong>Heater:</strong> <span id="heater_on"></span></div>
+                    <div class="status-item"><strong>Fan:</strong> <span id="fan_on"></span></div>
+                    <div class="status-item"><strong>Dehumidifier:</strong> <span id="dehumidifier_on"></span></div>
+                    <div class="status-item"><strong>Buzzer:</strong> <span id="buzzer_on"></span></div>
+                </div>
+                <div class="controls">
+                    <button id="toggle-mode">Toggle Mode</button>
+                    <button id="next-stage">Next Stage</button>
+                </div>
+            </div>
+            <script>
+                function updateStatus() {
+                    fetch('/api/status')
+                        .then(response => response.json())
+                        .then(data => {
+                            document.getElementById('mode').textContent = data.mode;
+                            document.getElementById('stage').textContent = data.stage;
+                            document.getElementById('temperature').textContent = data.temperature.toFixed(1);
+                            document.getElementById('humidity').textContent = data.humidity.toFixed(1);
+                            document.getElementById('target_temperature').textContent = data.target_temperature.toFixed(1);
+                            document.getElementById('heater_on').textContent = data.heater_on ? 'ON' : 'OFF';
+                            document.getElementById('fan_on').textContent = data.fan_on ? 'ON' : 'OFF';
+                            document.getElementById('dehumidifier_on').textContent = data.dehumidifier_on ? 'ON' : 'OFF';
+                            document.getElementById('buzzer_on').textContent = data.buzzer_on ? 'ON' : 'OFF';
+                        });
+                }
+
+                document.getElementById('toggle-mode').addEventListener('click', () => {
+                    fetch('/api/mode', { method: 'POST' })
+                        .then(() => updateStatus());
+                });
+
+                document.getElementById('next-stage').addEventListener('click', () => {
+                    fetch('/api/stage', { method: 'POST' })
+                        .then(() => updateStatus());
+                });
+
+                setInterval(updateStatus, 2000);
+                updateStatus();
+            </script>
+        </body>
+        </html>
+        """
+    )
 
 # =============================
 # LCD Configuration
@@ -73,6 +193,8 @@ dehumidifier_on = False
 heater_on = False
 buzzer_on = False
 target_temperature = 0.0
+temperature = 0.0
+humidity = 0.0
 
 # =============================
 # GPIO Setup
@@ -131,17 +253,17 @@ def control_buzzer(buzzer_on):
 
 def relay_on(pin):
     """Turns ON the relay depending on the relay logic type."""
-if RELAY_ACTIVE_LOW:
-GPIO.output(pin, GPIO.LOW)
-else:
-GPIO.output(pin, GPIO.HIGH)
+    if RELAY_ACTIVE_LOW:
+        GPIO.output(pin, GPIO.LOW)
+    else:
+        GPIO.output(pin, GPIO.HIGH)
 
 def relay_off(pin):
-"""Turns OFF the relay depending on the relay logic type."""
-if RELAY_ACTIVE_LOW:
-GPIO.output(pin, GPIO.HIGH)
-else:
-GPIO.output(pin, GPIO.LOW)
+    """Turns OFF the relay depending on the relay logic type."""
+    if RELAY_ACTIVE_LOW:
+        GPIO.output(pin, GPIO.HIGH)
+    else:
+        GPIO.output(pin, GPIO.LOW)
 
 def update_relays(heater_on, dehumidifier_on, fan_on):
     """Updates all relay states."""
@@ -203,29 +325,55 @@ def update_lcd(temp, hum, stage, mode, heater_on, fan_on, dehum_on, target_temp)
     # Line 1: Temperature
     lcd.write_string(f"Temp: {temp:.1f}/{target_temp:.1f} C")
 
-# Line 2: Humidity
-lcd.crlf()
-lcd.write_string(f"Humidity: {hum:.1f} %")
+    # Line 2: Humidity
+    lcd.crlf()
+    lcd.write_string(f"Humidity: {hum:.1f} %")
 
-# Line 3: Stage and Mode
-lcd.crlf()
-lcd.write_string(f"Stage: {stage}")
-lcd.cursor_pos = (2, 14)
-lcd.write_string(f"M:{mode[:3]}")
+    # Line 3: Stage and Mode
+    lcd.crlf()
+    lcd.write_string(f"Stage: {stage}")
+    lcd.cursor_pos = (2, 14)
+    lcd.write_string(f"M:{mode[:3]}")
 
-# Line 4: Actuator Status
-lcd.crlf()
-heater_str = "H" if heater_on else "-"
-fan_str = "F" if fan_on else "-"
-dehum_str = "D" if dehum_on else "-"
-lcd.write_string(f"Status: {heater_str}{fan_str}{dehum_str}")
+    # Line 4: Actuator Status
+    lcd.crlf()
+    heater_str = "H" if heater_on else "-"
+    fan_str = "F" if fan_on else "-"
+    dehum_str = "D" if dehum_on else "-"
+    lcd.write_string(f"Status: {heater_str}{fan_str}{dehum_str}")
+
+# =============================
+# Data Logging
+# =============================
+def log_data(timestamp, temp, hum, stage, mode, heater_on, fan_on, dehum_on, alarm_on):
+    """Logs the current state to a CSV file."""
+    log_file = 'curing_log.csv'
+    file_exists = os.path.isfile(log_file)
+    with open(log_file, 'a', newline='') as csvfile:
+        fieldnames = ['timestamp', 'temperature', 'humidity', 'stage', 'mode', 'heater_on', 'fan_on', 'dehumidifier_on', 'alarm_on']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+        if not file_exists:
+            writer.writeheader()
+
+        writer.writerow({
+            'timestamp': timestamp,
+            'temperature': temp,
+            'humidity': hum,
+            'stage': stage,
+            'mode': mode,
+            'heater_on': heater_on,
+            'fan_on': fan_on,
+            'dehumidifier_on': dehum_on,
+            'alarm_on': alarm_on
+        })
 
 # =============================
 # Main Control Loop
 # =============================
 def main():
     """Main loop for the tobacco curing controller."""
-    global current_mode, current_stage_index, stage_start_time, fan_on, dehumidifier_on, heater_on, target_temperature, buzzer_on
+    global current_mode, current_stage_index, stage_start_time, fan_on, dehumidifier_on, heater_on, target_temperature, buzzer_on, temperature, humidity
 
     setup_gpio()
     dht_device = adafruit_dht.DHT22(DHT_PIN)
@@ -318,6 +466,9 @@ def main():
                     print(f"Stage: {stage_name}, Mode: {current_mode}, Temp: {temperature:.1f}°C, Hum: {humidity:.1f}%")
                     print(f"Heater: {'ON' if heater_on else 'OFF'}, Dehumidifier: {'ON' if dehumidifier_on else 'OFF'}, Fan: {'ON' if fan_on else 'OFF'}")
 
+                    # Log data
+                    log_data(time.time(), temperature, humidity, stage_name, current_mode, heater_on, fan_on, dehumidifier_on, buzzer_on)
+
             except RuntimeError as error:
                 print(error.args[0])
 
@@ -330,4 +481,9 @@ def main():
 # Entry point
 # =============================
 if __name__ == "__main__":
+    # Start the Flask app in a separate thread
+    flask_thread = threading.Thread(target=lambda: app.run(host='0.0.0.0', port=5000))
+    flask_thread.daemon = True
+    flask_thread.start()
+
 main()
