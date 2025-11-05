@@ -1,65 +1,60 @@
-# ESP32 DHT22 Temperature and Humidity Controller
+# Raspberry Pi Tobacco Curing Controller
 
-This Arduino sketch turns an ESP32 into a temperature and humidity controller using a DHT22 sensor.
+This Python script automates the tobacco curing process using a Raspberry Pi 4, a DHT22 temperature and humidity sensor, and an I2C LCD display. It provides both automatic and manual control over the curing environment, following the four standard stages of flue-curing for tobacco.
 
-## Hardware Requirements
+## Features
 
-*   ESP32 development board
-*   DHT22 (or AM2302) temperature and humidity sensor
-*   A relay module to control a heater
-*   A relay module to control a humidifier
-*   Jumper wires
-*   5V power supply for the relay modules (optional, depending on the module)
+- **Automatic and Manual Modes:** Switch between fully automated curing cycles and manual control of individual components.
+- **Four Curing Stages:** The script is pre-programmed with the temperature, humidity, and duration for the four stages of flue-curing:
+    1. Yellowing
+    2. Leaf Drying
+    3. Midrib Drying
+    4. Ordering
+- **LCD Display:** A 20x4 I2C LCD displays the current temperature, humidity, curing stage, mode, and the status of the heater, fan, and dehumidifier.
+- **Button Controls:** Buttons are used to switch between modes, advance the curing stage in manual mode, and control the fan and dehumidifier in manual mode.
+- **Relay Control:** The script controls a heater, fan, and dehumidifier via relays.
 
-## Software Requirements
+## Required Hardware
 
-*   [Arduino IDE](https://www.arduino.cc/en/software)
-*   [ESP32 board support for the Arduino IDE](https://docs.espressif.com/projects/arduino-esp32/en/latest/installing.html)
-*   [DHT sensor library by Adafruit](https://github.com/adafruit/DHT-sensor-library)
-*   [Adafruit Unified Sensor library](https://github.com/adafruit/Adafruit_Sensor)
+- Raspberry Pi 4
+- DHT22 temperature and humidity sensor
+- 20x4 I2C LCD display (with PCF8574 expander)
+- Relays for controlling the heater, fan, and dehumidifier
+- Push buttons for user input
+- Jumper wires and a breadboard for connections
 
-## Circuit Setup
+## Setup and Installation
 
-1.  **DHT22 Sensor:**
-    *   Connect the VCC pin of the DHT22 to the 3.3V pin on the ESP32.
-    *   Connect the GND pin of the DHT22 to a GND pin on the ESP32.
-    *   Connect the Data pin of the DHT22 to pin D4 on the ESP32.
-    *   Place a 10k ohm pull-up resistor between the VCC and Data pins of the DHT22.
+1.  **Enable I2C:** On your Raspberry Pi, run `sudo raspi-config`, go to "Interfacing Options," and enable I2C.
+2.  **Install Dependencies:**
+    ```bash
+    pip3 install RPi.GPIO adafruit-circuitpython-dht RPLCD
+    ```
+3.  **Connections:**
+    - Connect the DHT22 sensor to GPIO 4.
+    - Connect the I2C LCD to the I2C pins on the Raspberry Pi (SDA and SCL).
+    - Connect the relays for the fan, dehumidifier, and heater to GPIO 17, 27, and 22, respectively.
+    - Connect the buttons for mode, stage, fan, and dehumidifier to GPIO 5, 6, 13, and 19, respectively.
 
-2.  **Relay Modules:**
-    *   Connect the IN pin of the heater relay module to pin D16 on the ESP32.
-    *   Connect the IN pin of the humidifier relay module to pin D17 on the ESP32.
-    *   Connect the VCC and GND pins of the relay modules to a suitable power source (e.g., the 5V pin on the ESP32 or an external power supply).
-    *   Connect your heater and humidifier to the output terminals of their respective relay modules according to the relay module's documentation.
+## Usage
 
-## How to Use
+Run the script from your terminal:
 
-1.  **Install the necessary libraries:**
-    *   Open the Arduino IDE.
-    *   Go to **Sketch > Include Library > Manage Libraries...**
-    *   Search for and install the "DHT sensor library by Adafruit".
-    *   Search for and install the "Adafruit Unified Sensor" library.
+```bash
+python3 rpi4_tobacco_curing.py
+```
 
-2.  **Configure the code:**
-    *   Open the `esp32_dht22_controller.ino` file in the Arduino IDE.
-    *   Adjust the `temperatureSetpoint` and `humiditySetpoint` variables to your desired values.
+The script will start in automatic mode and begin the curing process. You can switch to manual mode at any time using the mode button.
 
-3.  **Upload the code:**
-    *   Select your ESP32 board from the **Tools > Board** menu.
-    *   Select the correct COM port from the **Tools > Port** menu.
-    *   Click the "Upload" button.
+## Pinout (BCM Numbering)
 
-## Code Explanation
-
-*   **Libraries:** The code uses the Adafruit DHT and Unified Sensor libraries to interact with the DHT22 sensor.
-*   **Pin Definitions:** The `DHTPIN`, `HEATER_PIN`, and `HUMIDIFIER_PIN` constants define the ESP32 pins connected to the sensor and relays.
-*   **Setpoints:** The `temperatureSetpoint` and `humiditySetpoint` variables store the desired temperature and humidity levels.
-*   **`setup()`:**
-    *   Initializes serial communication for debugging.
-    *   Initializes the DHT22 sensor.
-    *   Sets the heater and humidifier control pins as outputs and initializes them to LOW (off).
-*   **`loop()`:**
-    *   Reads the temperature and humidity from the DHT22 sensor.
-    *   If the temperature is below the setpoint, it turns the heater on; otherwise, it turns it off.
-    *   If the humidity is below the setpoint, it turns the humidifier on; otherwise, it turns it off.
-    *   Prints the current temperature, humidity, and the status of the heater and humidifier to the serial monitor.
+| Component           | GPIO Pin |
+| ------------------- | -------- |
+| DHT22 Sensor        | 4        |
+| Fan Relay           | 17       |
+| Dehumidifier Relay  | 27       |
+| Heater Relay        | 22       |
+| Mode Button         | 5        |
+| Stage Button        | 6        |
+| Fan Button          | 13       |
+| Dehumidifier Button | 19       |
