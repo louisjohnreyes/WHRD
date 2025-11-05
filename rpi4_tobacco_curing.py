@@ -28,6 +28,7 @@ FAN_PIN_2 = 18
 DEHUMIDIFIER_PIN_1 = 27
 DEHUMIDIFIER_PIN_2 = 23
 HEATER_PIN = 22
+BUZZER_PIN = 24
 
 # Button definitions
 MODE_BUTTON_PIN = 5
@@ -70,6 +71,7 @@ stage_start_time = 0
 fan_on = False
 dehumidifier_on = False
 heater_on = False
+buzzer_on = False
 target_temperature = 0.0
 
 # =============================
@@ -85,6 +87,7 @@ def setup_gpio():
     GPIO.setup(DEHUMIDIFIER_PIN_1, GPIO.OUT)
     GPIO.setup(DEHUMIDIFIER_PIN_2, GPIO.OUT)
     GPIO.setup(HEATER_PIN, GPIO.OUT)
+    GPIO.setup(BUZZER_PIN, GPIO.OUT)
 
     # Output pins for LEDs
     GPIO.setup(YELLOWING_LED_PIN, GPIO.OUT)
@@ -106,6 +109,7 @@ def setup_gpio():
     relay_off(DEHUMIDIFIER_PIN_1)
     relay_off(DEHUMIDIFIER_PIN_2)
     relay_off(HEATER_PIN)
+    GPIO.output(BUZZER_PIN, GPIO.LOW)
 
     # Initialize all LEDs OFF
     GPIO.output(YELLOWING_LED_PIN, GPIO.LOW)
@@ -116,10 +120,17 @@ def setup_gpio():
     GPIO.output(MANUAL_MODE_LED_PIN, GPIO.LOW)
 
 # =============================
-# Relay Control Functions
+# Actuator Control Functions
 # =============================
+def control_buzzer(buzzer_on):
+    """Controls the buzzer."""
+    if buzzer_on:
+        GPIO.output(BUZZER_PIN, GPIO.HIGH)
+    else:
+        GPIO.output(BUZZER_PIN, GPIO.LOW)
+
 def relay_on(pin):
-"""Turns ON the relay depending on the relay logic type."""
+    """Turns ON the relay depending on the relay logic type."""
 if RELAY_ACTIVE_LOW:
 GPIO.output(pin, GPIO.LOW)
 else:
@@ -214,7 +225,7 @@ lcd.write_string(f"Status: {heater_str}{fan_str}{dehum_str}")
 # =============================
 def main():
     """Main loop for the tobacco curing controller."""
-    global current_mode, current_stage_index, stage_start_time, fan_on, dehumidifier_on, heater_on, target_temperature
+    global current_mode, current_stage_index, stage_start_time, fan_on, dehumidifier_on, heater_on, target_temperature, buzzer_on
 
     setup_gpio()
     dht_device = adafruit_dht.DHT22(DHT_PIN)
@@ -296,6 +307,9 @@ def main():
 
                     # Update LED indicators
                     update_leds(stage_name, current_mode)
+
+                    buzzer_on = not (loop_target_temperature - 2 <= temperature <= loop_target_temperature + 2)
+                    control_buzzer(buzzer_on)
 
                     # Update LCD display
                     update_lcd(temperature, humidity, stage_name, current_mode, heater_on, fan_on, dehumidifier_on, loop_target_temperature)
