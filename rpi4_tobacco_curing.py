@@ -23,8 +23,10 @@ cols=20, rows=4, dotsize=8)
 # Pin definitions (BCM numbering)
 # =============================
 DHT_PIN = board.D4 # DHT sensor data pin connected to GPIO 4
-FAN_PIN = 17
-DEHUMIDIFIER_PIN = 27
+FAN_PIN_1 = 17
+FAN_PIN_2 = 18
+DEHUMIDIFIER_PIN_1 = 27
+DEHUMIDIFIER_PIN_2 = 23
 HEATER_PIN = 22
 
 # Button definitions
@@ -32,6 +34,15 @@ MODE_BUTTON_PIN = 5
 STAGE_BUTTON_PIN = 6
 FAN_BUTTON_PIN = 13
 DEHUMIDIFIER_BUTTON_PIN = 19
+
+# LED Indicator definitions
+YELLOWING_LED_PIN = 16
+LEAF_DRYING_LED_PIN = 20
+MIDRIB_DRYING_LED_PIN = 21
+ORDERING_LED_PIN = 26
+
+AUTO_MODE_LED_PIN = 12
+MANUAL_MODE_LED_PIN = 25
 
 # =============================
 # Relay configuration
@@ -64,20 +75,44 @@ heater_on = False
 # GPIO Setup
 # =============================
 def setup_gpio():
-"""Sets up the GPIO pins."""
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(FAN_PIN, GPIO.OUT)
-GPIO.setup(DEHUMIDIFIER_PIN, GPIO.OUT)
-GPIO.setup(HEATER_PIN, GPIO.OUT)
-GPIO.setup(MODE_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(STAGE_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(FAN_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(DEHUMIDIFIER_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    """Sets up the GPIO pins."""
+    GPIO.setmode(GPIO.BCM)
 
-# Initialize all relays OFF
-relay_off(FAN_PIN)
-relay_off(DEHUMIDIFIER_PIN)
-relay_off(HEATER_PIN)
+    # Output pins for relays
+    GPIO.setup(FAN_PIN_1, GPIO.OUT)
+    GPIO.setup(FAN_PIN_2, GPIO.OUT)
+    GPIO.setup(DEHUMIDIFIER_PIN_1, GPIO.OUT)
+    GPIO.setup(DEHUMIDIFIER_PIN_2, GPIO.OUT)
+    GPIO.setup(HEATER_PIN, GPIO.OUT)
+
+    # Output pins for LEDs
+    GPIO.setup(YELLOWING_LED_PIN, GPIO.OUT)
+    GPIO.setup(LEAF_DRYING_LED_PIN, GPIO.OUT)
+    GPIO.setup(MIDRIB_DRYING_LED_PIN, GPIO.OUT)
+    GPIO.setup(ORDERING_LED_PIN, GPIO.OUT)
+    GPIO.setup(AUTO_MODE_LED_PIN, GPIO.OUT)
+    GPIO.setup(MANUAL_MODE_LED_PIN, GPIO.OUT)
+
+    # Input pins for buttons
+    GPIO.setup(MODE_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(STAGE_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(FAN_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(DEHUMIDIFIER_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+    # Initialize all relays OFF
+    relay_off(FAN_PIN_1)
+    relay_off(FAN_PIN_2)
+    relay_off(DEHUMIDIFIER_PIN_1)
+    relay_off(DEHUMIDIFIER_PIN_2)
+    relay_off(HEATER_PIN)
+
+    # Initialize all LEDs OFF
+    GPIO.output(YELLOWING_LED_PIN, GPIO.LOW)
+    GPIO.output(LEAF_DRYING_LED_PIN, GPIO.LOW)
+    GPIO.output(MIDRIB_DRYING_LED_PIN, GPIO.LOW)
+    GPIO.output(ORDERING_LED_PIN, GPIO.LOW)
+    GPIO.output(AUTO_MODE_LED_PIN, GPIO.LOW)
+    GPIO.output(MANUAL_MODE_LED_PIN, GPIO.LOW)
 
 # =============================
 # Relay Control Functions
@@ -97,21 +132,54 @@ else:
 GPIO.output(pin, GPIO.LOW)
 
 def update_relays(heater_on, dehumidifier_on, fan_on):
-"""Updates all relay states."""
-if heater_on:
-relay_on(HEATER_PIN)
-else:
-relay_off(HEATER_PIN)
+    """Updates all relay states."""
+    if heater_on:
+        relay_on(HEATER_PIN)
+    else:
+        relay_off(HEATER_PIN)
 
-if dehumidifier_on:
-relay_on(DEHUMIDIFIER_PIN)
-else:
-relay_off(DEHUMIDIFIER_PIN)
+    if dehumidifier_on:
+        relay_on(DEHUMIDIFIER_PIN_1)
+        relay_on(DEHUMIDIFIER_PIN_2)
+    else:
+        relay_off(DEHUMIDIFIER_PIN_1)
+        relay_off(DEHUMIDIFIER_PIN_2)
 
-if fan_on:
-relay_on(FAN_PIN)
-else:
-relay_off(FAN_PIN)
+    if fan_on:
+        relay_on(FAN_PIN_1)
+        relay_on(FAN_PIN_2)
+    else:
+        relay_off(FAN_PIN_1)
+        relay_off(FAN_PIN_2)
+
+# =============================
+# LED Control Logic
+# =============================
+def update_leds(stage_name, mode):
+    """Updates the LED indicators for stage and mode."""
+    # Turn off all stage LEDs first
+    GPIO.output(YELLOWING_LED_PIN, GPIO.LOW)
+    GPIO.output(LEAF_DRYING_LED_PIN, GPIO.LOW)
+    GPIO.output(MIDRIB_DRYING_LED_PIN, GPIO.LOW)
+    GPIO.output(ORDERING_LED_PIN, GPIO.LOW)
+
+    # Turn on the current stage LED
+    if stage_name == "YELLOWING":
+        GPIO.output(YELLOWING_LED_PIN, GPIO.HIGH)
+    elif stage_name == "LEAF_DRYING":
+        GPIO.output(LEAF_DRYING_LED_PIN, GPIO.HIGH)
+    elif stage_name == "MIDRIB_DRYING":
+        GPIO.output(MIDRIB_DRYING_LED_PIN, GPIO.HIGH)
+    elif stage_name == "ORDERING":
+        GPIO.output(ORDERING_LED_PIN, GPIO.HIGH)
+
+    # Update mode LEDs
+    if mode == "AUTO":
+        GPIO.output(AUTO_MODE_LED_PIN, GPIO.HIGH)
+        GPIO.output(MANUAL_MODE_LED_PIN, GPIO.LOW)
+    else: # MANUAL
+        GPIO.output(AUTO_MODE_LED_PIN, GPIO.LOW)
+        GPIO.output(MANUAL_MODE_LED_PIN, GPIO.HIGH)
 
 # =============================
 # LCD Update Function
@@ -209,6 +277,9 @@ heater_on = temperature < setpoints["temp"]
 
 # Update relays (fan, dehumidifier, heater)
 update_relays(heater_on, dehumidifier_on, fan_on)
+
+# Update LED indicators
+update_leds(stage_name, current_mode)
 
 # Update LCD display
 update_lcd(temperature, humidity, stage_name, current_mode, heater_on, fan_on, dehumidifier_on)
