@@ -55,10 +55,10 @@ RELAY_ACTIVE_LOW = True
 # Curing stages configuration
 # =============================
 CURING_STAGES = {
-"YELLOWING": {"temp": 35.0, "humidity": 85.0, "duration_hours": 48},
-"LEAF_DRYING": {"temp": 46.0, "humidity": 70.0, "duration_hours": 24},
-"MIDRIB_DRYING": {"temp": 65.0, "humidity": 50.0, "duration_hours": 24},
-"ORDERING": {"temp": 25.0, "humidity": 80.0, "duration_hours": 12},
+    "YELLOWING": {"max_temp": 42.0, "humidity": 85.0},
+    "LEAF_DRYING": {"max_temp": 55.0, "humidity": 70.0},
+    "MIDRIB_DRYING": {"max_temp": 70.0, "humidity": 50.0},
+    "ORDERING": {"temp": 25.0, "humidity": 80.0},
 }
 
 # =============================
@@ -70,6 +70,7 @@ stage_start_time = 0
 fan_on = False
 dehumidifier_on = False
 heater_on = False
+target_temperature = 0.0
 
 # =============================
 # GPIO Setup
@@ -184,12 +185,12 @@ def update_leds(stage_name, mode):
 # =============================
 # LCD Update Function
 # =============================
-def update_lcd(temp, hum, stage, mode, heater_on, fan_on, dehum_on):
-"""Formats and writes the current status to the LCD screen."""
-lcd.home()
+def update_lcd(temp, hum, stage, mode, heater_on, fan_on, dehum_on, target_temp):
+    """Formats and writes the current status to the LCD screen."""
+    lcd.home()
 
-# Line 1: Temperature
-lcd.write_string(f"Temp: {temp:.1f} C")
+    # Line 1: Temperature
+    lcd.write_string(f"Temp: {temp:.1f}/{target_temp:.1f} C")
 
 # Line 2: Humidity
 lcd.crlf()
@@ -212,89 +213,104 @@ lcd.write_string(f"Status: {heater_str}{fan_str}{dehum_str}")
 # Main Control Loop
 # =============================
 def main():
-"""Main loop for the tobacco curing controller."""
-global current_mode, current_stage_index, stage_start_time, fan_on, dehumidifier_on, heater_on
+    """Main loop for the tobacco curing controller."""
+    global current_mode, current_stage_index, stage_start_time, fan_on, dehumidifier_on, heater_on, target_temperature
 
-setup_gpio()
-dht_device = adafruit_dht.DHT22(DHT_PIN)
-stage_keys = list(CURING_STAGES.keys())
-stage_start_time = time.time()
-last_mode_press = 0
-last_stage_press = 0
-last_fan_press = 0
-last_dehumidifier_press = 0
+    setup_gpio()
+    dht_device = adafruit_dht.DHT22(DHT_PIN)
+    stage_keys = list(CURING_STAGES.keys())
+    stage_start_time = time.time()
+    last_mode_press = 0
+    last_stage_press = 0
+    last_fan_press = 0
+    last_dehumidifier_press = 0
+    last_temp_increase_time = time.time()
+    initial_temp_set = False
 
-try:
-lcd.clear()
-while True:
-# Button reading
-mode_button_pressed = not GPIO.input(MODE_BUTTON_PIN)
-stage_button_pressed = not GPIO.input(STAGE_BUTTON_PIN)
-fan_button_pressed = not GPIO.input(FAN_BUTTON_PIN)
-dehumidifier_button_pressed = not GPIO.input(DEHUMIDIFIER_BUTTON_PIN)
+    try:
+        lcd.clear()
+        while True:
+            # Button reading
+            mode_button_pressed = not GPIO.input(MODE_BUTTON_PIN)
+            stage_button_pressed = not GPIO.input(STAGE_BUTTON_PIN)
+            fan_button_pressed = not GPIO.input(FAN_BUTTON_PIN)
+            dehumidifier_button_pressed = not GPIO.input(DEHUMIDIFIER_BUTTON_PIN)
 
-# Mode switching
-if mode_button_pressed and (time.time() - last_mode_press > 0.2):
-last_mode_press = time.time()
-current_mode = "MANUAL" if current_mode == "AUTO" else "AUTO"
-print(f"Switched to {current_mode} mode")
+            # Mode switching
+            if mode_button_pressed and (time.time() - last_mode_press > 0.2):
+                last_mode_press = time.time()
+                current_mode = "MANUAL" if current_mode == "AUTO" else "AUTO"
+                print(f"Switched to {current_mode} mode")
+                initial_temp_set = False
 
-# Sensor reading
-try:
-temperature = dht_device.temperature
-humidity = dht_device.humidity
-if temperature is not None and humidity is not None:
-stage_name = stage_keys[current_stage_index]
-setpoints = CURING_STAGES[stage_name]
+            # Sensor reading
+            try:
+                temperature = dht_device.temperature
+                humidity = dht_device.humidity
+                if temperature is not None and humidity is not None:
+                    stage_name = stage_keys[current_stage_index]
+                    setpoints = CURING_STAGES[stage_name]
 
-# Stage transition and control logic
-if current_mode == "AUTO":
-stage_duration_seconds = setpoints["duration_hours"] * 3600
-if time.time() - stage_start_time > stage_duration_seconds:
-current_stage_index = (current_stage_index + 1) % len(stage_keys)
-stage_start_time = time.time()
-print(f"Auto-advancing to stage: {stage_keys[current_stage_index]}")
+                    if not initial_temp_set:
+                        if stage_name in ["YELLOWING", "LEAF_DRYING", "MIDRIB_DRYING"]:
+                            target_temperature = temperature
+                        else:  # ORDERING
+                            target_temperature = setpoints.get("temp", temperature)
+                        initial_temp_set = True
+                        last_temp_increase_time = time.time()
 
-heater_on = temperature < setpoints["temp"]
-dehumidifier_on = humidity > setpoints["humidity"]
-fan_on = dehumidifier_on or (stage_name == "LEAF_DRYING")
-else: # MANUAL mode
-if stage_button_pressed and (time.time() - last_stage_press > 0.2):
-last_stage_press = time.time()
-current_stage_index = (current_stage_index + 1) % len(stage_keys)
-stage_start_time = time.time()
-print(f"Manually advanced to stage: {stage_keys[current_stage_index]}")
+                    # Stage transition and control logic
+                    if current_mode == "AUTO":
+                        if stage_name in ["YELLOWING", "LEAF_DRYING", "MIDRIB_DRYING"]:
+                            if time.time() - last_temp_increase_time >= 3600:  # 1 hour
+                                if target_temperature < setpoints["max_temp"]:
+                                    target_temperature += 1.0
+                                    print(f"Increased target temperature to: {target_temperature:.1f}°C")
+                                last_temp_increase_time = time.time()
 
-if fan_button_pressed and (time.time() - last_fan_press > 0.2):
-last_fan_press = time.time()
-fan_on = not fan_on
+                        loop_target_temperature = target_temperature
+                        heater_on = temperature < loop_target_temperature
+                        dehumidifier_on = humidity > setpoints["humidity"]
+                        fan_on = dehumidifier_on or (stage_name == "LEAF_DRYING")
+                    else:  # MANUAL mode
+                        if stage_button_pressed and (time.time() - last_stage_press > 0.2):
+                            last_stage_press = time.time()
+                            current_stage_index = (current_stage_index + 1) % len(stage_keys)
+                            stage_start_time = time.time()
+                            print(f"Manually advanced to stage: {stage_keys[current_stage_index]}")
+                            initial_temp_set = False
 
-if dehumidifier_button_pressed and (time.time() - last_dehumidifier_press > 0.2):
-last_dehumidifier_press = time.time()
-dehumidifier_on = not dehumidifier_on
+                        if fan_button_pressed and (time.time() - last_fan_press > 0.2):
+                            last_fan_press = time.time()
+                            fan_on = not fan_on
 
-heater_on = temperature < setpoints["temp"]
+                        if dehumidifier_button_pressed and (time.time() - last_dehumidifier_press > 0.2):
+                            last_dehumidifier_press = time.time()
+                            dehumidifier_on = not dehumidifier_on
 
-# Update relays (fan, dehumidifier, heater)
-update_relays(heater_on, dehumidifier_on, fan_on)
+                        loop_target_temperature = setpoints.get("max_temp", setpoints.get("temp", temperature))
+                        heater_on = temperature < loop_target_temperature
 
-# Update LED indicators
-update_leds(stage_name, current_mode)
+                    # Update relays (fan, dehumidifier, heater)
+                    update_relays(heater_on, dehumidifier_on, fan_on)
 
-# Update LCD display
-update_lcd(temperature, humidity, stage_name, current_mode, heater_on, fan_on, dehumidifier_on)
+                    # Update LED indicators
+                    update_leds(stage_name, current_mode)
 
-# Console feedback
-print(f"Stage: {stage_name}, Mode: {current_mode}, Temp: {temperature:.1f}°C, Hum: {humidity:.1f}%")
-print(f"Heater: {'ON' if heater_on else 'OFF'}, Dehumidifier: {'ON' if dehumidifier_on else 'OFF'}, Fan: {'ON' if fan_on else 'OFF'}")
+                    # Update LCD display
+                    update_lcd(temperature, humidity, stage_name, current_mode, heater_on, fan_on, dehumidifier_on, loop_target_temperature)
 
-except RuntimeError as error:
-print(error.args[0])
+                    # Console feedback
+                    print(f"Stage: {stage_name}, Mode: {current_mode}, Temp: {temperature:.1f}°C, Hum: {humidity:.1f}%")
+                    print(f"Heater: {'ON' if heater_on else 'OFF'}, Dehumidifier: {'ON' if dehumidifier_on else 'OFF'}, Fan: {'ON' if fan_on else 'OFF'}")
 
-time.sleep(2)
-finally:
-lcd.clear()
-GPIO.cleanup()
+            except RuntimeError as error:
+                print(error.args[0])
+
+            time.sleep(2)
+    finally:
+        lcd.clear()
+        GPIO.cleanup()
 
 # =============================
 # Entry point
