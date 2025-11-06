@@ -374,6 +374,31 @@ def log_data(timestamp, temp, hum, stage, mode, heater_on, fan_on, dehum_on, ala
             'alarm_on': alarm_on
         })
 
+def handle_sensor_failure():
+    """Handles DHT22 sensor failure by shutting down actuators and displaying an error."""
+    global heater_on, fan_on, dehumidifier_on, buzzer_on
+
+    print("DHT22 sensor error. Turning off actuators.")
+
+    # Turn off all actuators for safety
+    heater_on = False
+    fan_on = False
+    dehumidifier_on = False
+    update_relays(heater_on, dehumidifier_on, fan_on)
+
+    # Turn off buzzer
+    buzzer_on = False
+    control_buzzer(buzzer_on)
+
+    # Display error message on LCD
+    lcd.clear()
+    lcd.write_string("Sensor Error!")
+    lcd.crlf()
+    lcd.write_string("Check DHT22 wiring.")
+
+    # Log the failure
+    log_data(time.time(), -1, -1, "SENSOR_ERROR", current_mode, False, False, False, False)
+
 # =============================
 # Main Control Loop
 # =============================
@@ -412,11 +437,15 @@ def main():
             try:
                 temperature = dht_device.temperature
                 humidity = dht_device.humidity
-                if temperature is not None and humidity is not None:
-                    stage_name = stage_keys[current_stage_index]
-                    setpoints = CURING_STAGES[stage_name]
+                if temperature is None or humidity is None:
+                    handle_sensor_failure()
+                    time.sleep(5)  # Wait before retrying
+                    continue
 
-                    if not initial_temp_set:
+                stage_name = stage_keys[current_stage_index]
+                setpoints = CURING_STAGES[stage_name]
+
+                if not initial_temp_set:
                         if stage_name in ["YELLOWING", "LEAF_DRYING", "MIDRIB_DRYING"]:
                             target_temperature = temperature
                         else:  # ORDERING
@@ -479,6 +508,7 @@ def main():
 
             except RuntimeError as error:
                 print(error.args[0])
+                handle_sensor_failure()
 
             time.sleep(2)
     finally:
