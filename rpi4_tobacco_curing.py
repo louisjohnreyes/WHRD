@@ -34,12 +34,16 @@ app = Flask(__name__)
 @app.route('/api/status', methods=['GET'])
 def get_status():
     """Returns the current status of the curing process."""
+    min_temp = target_temperature - 2
+    max_temp = target_temperature + 2
     status = {
         "mode": current_mode,
         "stage": list(CURING_STAGES.keys())[current_stage_index],
         "temperature": temperature,
         "humidity": humidity,
         "target_temperature": target_temperature,
+        "min_temp": min_temp,
+        "max_temp": max_temp,
         "heater_on": heater_on,
         "fan_on": fan_on,
         "dehumidifier_on": dehumidifier_on,
@@ -87,7 +91,8 @@ def index():
                     <div class="status-item"><strong>Stage:</strong> <span id="stage"></span></div>
                     <div class="status-item"><strong>Temperature:</strong> <span id="temperature"></span> &deg;C</div>
                     <div class="status-item"><strong>Humidity:</strong> <span id="humidity"></span> %</div>
-                    <div class="status-item"><strong>Target Temp:</strong> <span id="target_temperature"></span> &deg;C</div>
+                    <div class="status-item"><strong>Min Temp:</strong> <span id="min_temp"></span> &deg;C</div>
+                    <div class="status-item"><strong>Max Temp:</strong> <span id="max_temp"></span> &deg;C</div>
                     <div class="status-item"><strong>Heater:</strong> <span id="heater_on"></span></div>
                     <div class="status-item"><strong>Fan:</strong> <span id="fan_on"></span></div>
                     <div class="status-item"><strong>Dehumidifier:</strong> <span id="dehumidifier_on"></span></div>
@@ -107,7 +112,8 @@ def index():
                             document.getElementById('stage').textContent = data.stage;
                             document.getElementById('temperature').textContent = data.temperature.toFixed(1);
                             document.getElementById('humidity').textContent = data.humidity.toFixed(1);
-                            document.getElementById('target_temperature').textContent = data.target_temperature.toFixed(1);
+                            document.getElementById('min_temp').textContent = data.min_temp.toFixed(1);
+                            document.getElementById('max_temp').textContent = data.max_temp.toFixed(1);
                             document.getElementById('heater_on').textContent = data.heater_on ? 'ON' : 'OFF';
                             document.getElementById('fan_on').textContent = data.fan_on ? 'ON' : 'OFF';
                             document.getElementById('dehumidifier_on').textContent = data.dehumidifier_on ? 'ON' : 'OFF';
@@ -318,12 +324,12 @@ def update_leds(stage_name, mode):
 # =============================
 # LCD Update Function
 # =============================
-def update_lcd(temp, hum, stage, mode, heater_on, fan_on, dehum_on, target_temp):
+def update_lcd(temp, hum, stage, mode, heater_on, fan_on, dehum_on, min_temp, max_temp):
     """Formats and writes the current status to the LCD screen."""
     lcd.home()
 
     # Line 1: Temperature
-    lcd.write_string(f"Temp: {temp:.1f}/{target_temp:.1f} C")
+    lcd.write_string(f"Temp:{temp:.1f} R:{min_temp:.1f}-{max_temp:.1f}")
 
     # Line 2: Humidity
     lcd.crlf()
@@ -456,11 +462,13 @@ def main():
                     # Update LED indicators
                     update_leds(stage_name, current_mode)
 
-                    buzzer_on = not (loop_target_temperature - 2 <= temperature <= loop_target_temperature + 2)
+                    min_temp = loop_target_temperature - 2
+                    max_temp = loop_target_temperature + 2
+                    buzzer_on = not (min_temp <= temperature <= max_temp)
                     control_buzzer(buzzer_on)
 
                     # Update LCD display
-                    update_lcd(temperature, humidity, stage_name, current_mode, heater_on, fan_on, dehumidifier_on, loop_target_temperature)
+                    update_lcd(temperature, humidity, stage_name, current_mode, heater_on, fan_on, dehumidifier_on, min_temp, max_temp)
 
                     # Console feedback
                     print(f"Stage: {stage_name}, Mode: {current_mode}, Temp: {temperature:.1f}°C, Hum: {humidity:.1f}%")
