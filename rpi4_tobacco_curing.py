@@ -34,14 +34,15 @@ app = Flask(__name__)
 @app.route('/api/status', methods=['GET'])
 def get_status():
     """Returns the current status of the curing process."""
-    min_temp = target_temperature - 2
-    max_temp = target_temperature + 2
+    stage_name = list(CURING_STAGES.keys())[current_stage_index]
+    min_temp = current_target_temp - 2
+    max_temp = current_target_temp + 2
     status = {
         "mode": current_mode,
-        "stage": list(CURING_STAGES.keys())[current_stage_index],
+        "stage": stage_name,
         "temperature": temperature,
         "humidity": humidity,
-        "target_temperature": target_temperature,
+        "target_temperature": current_target_temp,
         "min_temp": min_temp,
         "max_temp": max_temp,
         "heater_on": heater_on,
@@ -182,10 +183,10 @@ RELAY_ACTIVE_LOW = True
 # Curing stages configuration
 # =============================
 CURING_STAGES = {
-    "YELLOWING": {"max_temp": 42.0, "humidity": 85.0},
-    "LEAF_DRYING": {"max_temp": 55.0, "humidity": 70.0},
-    "MIDRIB_DRYING": {"max_temp": 70.0, "humidity": 50.0},
-    "ORDERING": {"temp": 25.0, "humidity": 80.0},
+    "YELLOWING": {"temp": 40.0, "humidity": 85.0, "duration_hours": 48},
+    "LEAF_DRYING": {"temp": 55.0, "humidity": 70.0, "duration_hours": 24},
+    "MIDRIB_DRYING": {"temp": 70.0, "humidity": 50.0, "duration_hours": 24},
+    "ORDERING": {"temp": 25.0, "humidity": 80.0, "duration_hours": 12},
 }
 
 # =============================
@@ -198,9 +199,10 @@ fan_on = False
 dehumidifier_on = False
 heater_on = False
 buzzer_on = False
-target_temperature = 0.0
 temperature = 0.0
 humidity = 0.0
+current_target_temp = 0.0
+last_temp_increase_time = 0
 
 # =============================
 # GPIO Setup
@@ -376,10 +378,9 @@ def log_data(timestamp, temp, hum, stage, mode, heater_on, fan_on, dehum_on, ala
 
 # =============================
 # Main Control Loop
-# =============================
 def main():
     """Main loop for the tobacco curing controller."""
-    global current_mode, current_stage_index, stage_start_time, fan_on, dehumidifier_on, heater_on, target_temperature, buzzer_on, temperature, humidity
+    global current_mode, current_stage_index, stage_start_time, fan_on, dehumidifier_on, heater_on, buzzer_on, temperature, humidity, current_target_temp, last_temp_increase_time
 
     setup_gpio()
     dht_device = adafruit_dht.DHT22(DHT_PIN)
@@ -389,8 +390,10 @@ def main():
     last_stage_press = 0
     last_fan_press = 0
     last_dehumidifier_press = 0
+
+    # Initialize current_target_temp at the start
+    current_target_temp = CURING_STAGES[stage_keys[current_stage_index]].get("temp", 0)
     last_temp_increase_time = time.time()
-    initial_temp_set = False
 
     try:
         lcd.clear()
@@ -406,7 +409,22 @@ def main():
                 last_mode_press = time.time()
                 current_mode = "MANUAL" if current_mode == "AUTO" else "AUTO"
                 print(f"Switched to {current_mode} mode")
-                initial_temp_set = False
+
+            # Stage switching (accessible in both AUTO and MANUAL modes)
+            if stage_button_pressed and (time.time() - last_stage_press > 0.2):
+                last_stage_press = time.time()
+                current_stage_index = (current_stage_index + 1) % len(stage_keys)
+                stage_start_time = time.time()
+                stage_name = stage_keys[current_stage_index]
+                print(f"Manually advanced to stage: {stage_name}")
+
+                # Reset temperature logic for the new stage
+                setpoints = CURING_STAGES[stage_name]
+                if stage_name in ["LEAF_DRYING", "MIDRIB_DRYING"]:
+                    current_target_temp = temperature # Start increasing from current temp
+                else:
+                    current_target_temp = setpoints.get("temp", 0)
+                last_temp_increase_time = time.time()
 
             # Sensor reading
             try:
@@ -416,35 +434,43 @@ def main():
                     stage_name = stage_keys[current_stage_index]
                     setpoints = CURING_STAGES[stage_name]
 
-                    if not initial_temp_set:
-                        if stage_name in ["YELLOWING", "LEAF_DRYING", "MIDRIB_DRYING"]:
-                            target_temperature = temperature
-                        else:  # ORDERING
-                            target_temperature = setpoints.get("temp", temperature)
-                        initial_temp_set = True
-                        last_temp_increase_time = time.time()
-
-                    # Stage transition and control logic
+                    # Control logic
                     if current_mode == "AUTO":
-                        if stage_name in ["YELLOWING", "LEAF_DRYING", "MIDRIB_DRYING"]:
-                            if time.time() - last_temp_increase_time >= 3600:  # 1 hour
-                                if target_temperature < setpoints["max_temp"]:
-                                    target_temperature += 1.0
-                                    print(f"Increased target temperature to: {target_temperature:.1f}°C")
-                                last_temp_increase_time = time.time()
-
-                        loop_target_temperature = target_temperature
-                        heater_on = temperature < loop_target_temperature
-                        dehumidifier_on = humidity > setpoints["humidity"]
-                        fan_on = dehumidifier_on or (stage_name == "LEAF_DRYING")
-                    else:  # MANUAL mode
-                        if stage_button_pressed and (time.time() - last_stage_press > 0.2):
-                            last_stage_press = time.time()
+                        stage_duration_seconds = setpoints.get("duration_hours", 0) * 3600
+                        if stage_duration_seconds > 0 and (time.time() - stage_start_time > stage_duration_seconds):
                             current_stage_index = (current_stage_index + 1) % len(stage_keys)
                             stage_start_time = time.time()
-                            print(f"Manually advanced to stage: {stage_keys[current_stage_index]}")
-                            initial_temp_set = False
+                            stage_name = stage_keys[current_stage_index]
+                            print(f"Auto-advancing to stage: {stage_name}")
 
+                            # Reset temperature logic for the new stage
+                            setpoints = CURING_STAGES[stage_name]
+                            if stage_name in ["LEAF_DRYING", "MIDRIB_DRYING"]:
+                                current_target_temp = temperature # Start increasing from current temp
+                            else:
+                                current_target_temp = setpoints.get("temp", 0)
+                            last_temp_increase_time = time.time()
+
+                        # Gradual temperature increase for specific stages
+                        if stage_name in ["LEAF_DRYING", "MIDRIB_DRYING"]:
+                            if time.time() - last_temp_increase_time >= 3600:  # 1 hour
+                                if current_target_temp < setpoints["temp"]:
+                                    current_target_temp += 1.0
+                                    print(f"Increased target temperature to: {current_target_temp:.1f}°C")
+                                last_temp_increase_time = time.time()
+                        else:
+                            current_target_temp = setpoints.get("temp", 0)
+
+                        # Hysteresis for heater control
+                        if temperature < current_target_temp - 2:
+                            heater_on = True
+                        elif temperature > current_target_temp:
+                            heater_on = False
+
+                        dehumidifier_on = humidity > setpoints["humidity"]
+                        fan_on = dehumidifier_on
+
+                    else:  # MANUAL mode
                         if fan_button_pressed and (time.time() - last_fan_press > 0.2):
                             last_fan_press = time.time()
                             fan_on = not fan_on
@@ -453,17 +479,18 @@ def main():
                             last_dehumidifier_press = time.time()
                             dehumidifier_on = not dehumidifier_on
 
-                        loop_target_temperature = setpoints.get("max_temp", setpoints.get("temp", temperature))
-                        heater_on = temperature < loop_target_temperature
+                        # In manual mode, heater is off unless explicitly controlled (not implemented)
+                        heater_on = False
 
-                    # Update relays (fan, dehumidifier, heater)
+                    # Update relays
                     update_relays(heater_on, dehumidifier_on, fan_on)
 
                     # Update LED indicators
                     update_leds(stage_name, current_mode)
 
-                    min_temp = loop_target_temperature - 2
-                    max_temp = loop_target_temperature + 2
+                    # Temperature alarm
+                    min_temp = current_target_temp - 2
+                    max_temp = current_target_temp + 2
                     buzzer_on = not (min_temp <= temperature <= max_temp)
                     control_buzzer(buzzer_on)
 
