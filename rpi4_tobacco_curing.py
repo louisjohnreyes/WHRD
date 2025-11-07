@@ -41,7 +41,6 @@ def get_status():
         "stage": stage_name,
         "temperature": temperature,
         "humidity": humidity,
-        "target_temp": setpoints["temp"],
         "min_temp": setpoints["min_temp"],
         "max_temp": setpoints["max_temp"],
         "fan_on": fan_on,
@@ -105,9 +104,8 @@ def index():
                     <div class="status-item"><strong>Mode:</strong> <span id="mode"></span></div>
                     <div class="status-item"><strong>Stage:</strong> <span id="stage"></span></div>
                     <div class="status-item"><strong>Temperature:</strong> <span id="temperature"></span> &deg;C</div>
-                    <div class="status-item"><strong>Target Temp:</strong> <span id="target_temp"></span> &deg;C</div>
                     <div class="status-item"><strong>Min Temp:</strong> <span id="min_temp"></span> &deg;C</div>
-                    <div class="status-item"><strong>Max Temp:</strong> <span id="max_temp"></span> &deg;C</div>
+                    <div class="status-item"><strong>Maximum Target Temp:</strong> <span id="max_temp"></span> &deg;C</div>
                     <div class="status-item"><strong>Humidity:</strong> <span id="humidity"></span> %</div>
                     <div class="status-item"><strong>Fan 1:</strong> <span id="fan_on"></span></div>
                     <div class="status-item"><strong>Dehumidifier 1:</strong> <span id="dehumidifier_on"></span></div>
@@ -130,7 +128,6 @@ def index():
                             document.getElementById('mode').textContent = data.mode;
                             document.getElementById('stage').textContent = data.stage;
                             document.getElementById('temperature').textContent = data.temperature.toFixed(1);
-                            document.getElementById('target_temp').textContent = data.target_temp.toFixed(1);
                             document.getElementById('min_temp').textContent = data.min_temp.toFixed(1);
                             document.getElementById('max_temp').textContent = data.max_temp.toFixed(1);
                             document.getElementById('humidity').textContent = data.humidity.toFixed(1);
@@ -226,6 +223,8 @@ CURING_STAGES = {
 current_mode = "AUTO" # "AUTO" or "MANUAL"
 current_stage_index = 0
 stage_start_time = 0
+stage_start_temp = 0.0
+auto_target_temp = 0.0
 fan_on = False
 dehumidifier_on = False
 buzzer_on = False
@@ -393,7 +392,7 @@ def update_lcd(temp, hum, stage, mode, fan_on, dehum_on):
 # =============================
 def main():
     """Main loop for the tobacco curing controller."""
-    global current_mode, current_stage_index, stage_start_time, fan_on, dehumidifier_on, buzzer_on, temperature, humidity
+    global current_mode, current_stage_index, stage_start_time, fan_on, dehumidifier_on, buzzer_on, temperature, humidity, stage_start_temp, auto_target_temp
 
     setup_gpio()
     dht_device = adafruit_dht.DHT22(DHT_PIN)
@@ -424,6 +423,10 @@ def main():
                 last_stage_press = time.time()
                 current_stage_index = (current_stage_index + 1) % len(stage_keys)
                 stage_start_time = time.time()
+                stage_name = stage_keys[current_stage_index]
+                setpoints = CURING_STAGES[stage_name]
+                if current_mode == "AUTO":
+                    stage_start_temp = temperature if temperature is not None else setpoints["min_temp"]
                 print(f"Manually advanced to stage: {stage_keys[current_stage_index]}")
 
             # Sensor reading
@@ -441,9 +444,21 @@ def main():
                             current_stage_index = (current_stage_index + 1) % len(stage_keys)
                             stage_start_time = time.time()
                             print(f"Auto-advancing to stage: {stage_keys[current_stage_index]}")
+                        # Calculate the elapsed time in hours
+                        elapsed_hours = (time.time() - stage_start_time) / 3600
 
-                        dehumidifier_on = humidity > setpoints["humidity"]
-                        fan_on = dehumidifier_on or (stage_name == "LEAF_DRYING")
+                        # Calculate the target temperature with a 1°C increase per hour
+                        auto_target_temp = stage_start_temp + elapsed_hours
+
+                        # Clamp the target temperature to the max for the stage
+                        auto_target_temp = min(auto_target_temp, setpoints["max_temp"])
+
+                        if temperature < auto_target_temp - 2:
+                            dehumidifier_on = True
+                            fan_on = True
+                        elif temperature > auto_target_temp + 2:
+                            dehumidifier_on = False
+                            fan_on = False
                     else: # MANUAL mode
                         if fan_button_pressed and (time.time() - last_fan_press > 0.2):
                             last_fan_press = time.time()
