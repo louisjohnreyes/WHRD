@@ -213,10 +213,10 @@ RELAY_ACTIVE_LOW = False
 # Curing stages configuration
 # =============================
 CURING_STAGES = {
-    "YELLOWING": {"temp": 35.0, "min_temp": 27.0, "max_temp": 40.0, "humidity": 85.0, "duration_hours": 48},
-    "LEAF_DRYING": {"temp": 50.0, "min_temp": 45.0, "max_temp": 55.0, "humidity": 70.0, "duration_hours": 24},
-    "MIDRIB_DRYING": {"temp": 65.0, "min_temp": 60.0, "max_temp": 70.0, "humidity": 50.0, "duration_hours": 24},
-    "ORDERING": {"temp": 25.0, "min_temp": 23.0, "max_temp": 27.0, "humidity": 80.0, "duration_hours": 12},
+    "YELLOWING": {"temp": 35.0, "min_temp": 27.0, "max_temp": 40.0, "humidity": 85.0, "duration_hours": 48, "ramp_fan_on": False},
+    "LEAF_DRYING": {"temp": 50.0, "min_temp": 45.0, "max_temp": 55.0, "humidity": 70.0, "duration_hours": 24, "ramp_fan_on": True},
+    "MIDRIB_DRYING": {"temp": 65.0, "min_temp": 60.0, "max_temp": 70.0, "humidity": 50.0, "duration_hours": 24, "ramp_fan_on": True},
+    "ORDERING": {"temp": 25.0, "min_temp": 23.0, "max_temp": 27.0, "humidity": 80.0, "duration_hours": 12, "ramp_fan_on": False},
 }
 
 # =============================
@@ -445,22 +445,41 @@ def main():
                         if time.time() - stage_start_time > stage_duration_seconds:
                             current_stage_index = (current_stage_index + 1) % len(stage_keys)
                             stage_start_time = time.time()
-                            print(f"Auto-advancing to stage: {stage_keys[current_stage_index]}")
+                            stage_name = stage_keys[current_stage_index]
+                            setpoints = CURING_STAGES[stage_name]
+                            if temperature is not None:
+                                stage_start_temp = temperature
+                            else:
+                                stage_start_temp = setpoints.get("min_temp", 27.0)
+                            print(f"Auto-advancing to stage: {stage_name}")
+
                         # Calculate the elapsed time in hours
                         elapsed_hours = (time.time() - stage_start_time) / 3600
 
                         # Calculate the target temperature with a 1°C increase per hour
                         auto_target_temp = stage_start_temp + elapsed_hours
 
-                        # Clamp the target temperature to the max for the stage
-                        auto_target_temp = min(auto_target_temp, setpoints["max_temp"])
+                        # Determine if we are in the ramp-up phase or maintenance phase
+                        if auto_target_temp < setpoints["max_temp"]:
+                            # Ramp-up phase
+                            fan_on = setpoints.get("ramp_fan_on", False)
 
-                        if temperature < auto_target_temp - 2:
-                            dehumidifier_on = True
-                            fan_on = True
-                        elif temperature > auto_target_temp + 2:
-                            dehumidifier_on = False
-                            fan_on = False
+                            # Dehumidifier controls temperature based on ramping target
+                            if temperature < auto_target_temp - 2:
+                                dehumidifier_on = True
+                            elif temperature > auto_target_temp + 2:
+                                dehumidifier_on = False
+                        else:
+                            # Maintenance phase (target temperature is max_temp)
+                            auto_target_temp = setpoints["max_temp"]
+
+                            # Hysteresis control for both fan and dehumidifier
+                            if temperature < auto_target_temp - 2:
+                                dehumidifier_on = True
+                                fan_on = True
+                            elif temperature > auto_target_temp + 2:
+                                dehumidifier_on = False
+                                fan_on = False
                     else: # MANUAL mode
                         if fan_button_pressed and (time.time() - last_fan_press > 0.2):
                             last_fan_press = time.time()
