@@ -22,11 +22,13 @@ import threading
 import csv
 import os
 from flask import Flask, jsonify, render_template_string
+from datetime import datetime
 
 # =============================
 # LCD Configuration
 # =============================
 app = Flask(__name__)
+SCRIPT_START_TIME = time.time()
 
 # =============================
 # Web Server Routes
@@ -43,6 +45,9 @@ def get_status():
         elapsed_since_start = time.time() - stage_start_time
         remaining_seconds = 3600 - (elapsed_since_start % 3600)
 
+    uptime = time.time() - SCRIPT_START_TIME
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     status = {
         "mode": current_mode,
         "stage": stage_name,
@@ -55,7 +60,9 @@ def get_status():
         "fan_on_2": fan_on,
         "dehumidifier_on_2": dehumidifier_on,
         "buzzer_on": buzzer_on,
-        "remaining_seconds": remaining_seconds
+        "remaining_seconds": remaining_seconds,
+        "uptime": uptime,
+        "current_time": current_time
     }
     return jsonify(status)
 
@@ -100,6 +107,7 @@ def index():
             <style>
                 body { font-family: sans-serif; }
                 .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { display: flex; justify-content: space-between; margin-bottom: 20px; }
                 .status { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
                 .status-item { padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
                 .controls { margin-top: 20px; }
@@ -108,6 +116,10 @@ def index():
         </head>
         <body>
             <div class="container">
+                <div class="header">
+                    <div><strong>Uptime:</strong> <span id="uptime"></span></div>
+                    <div><strong>Time:</strong> <span id="current_time"></span></div>
+                </div>
                 <h1>Tobacco Curing Control</h1>
                 <div class="status">
                     <div class="status-item"><strong>Mode:</strong> <span id="mode"></span></div>
@@ -146,6 +158,12 @@ def index():
                             document.getElementById('fan_on_2').textContent = data.fan_on_2 ? 'ON' : 'OFF';
                             document.getElementById('dehumidifier_on_2').textContent = data.dehumidifier_on_2 ? 'ON' : 'OFF';
                             document.getElementById('buzzer_on').textContent = data.buzzer_on ? 'ON' : 'OFF';
+
+                            const uptime_hours = Math.floor(data.uptime / 3600);
+                            const uptime_minutes = Math.floor((data.uptime % 3600) / 60);
+                            const uptime_seconds = Math.floor(data.uptime % 60);
+                            document.getElementById('uptime').textContent = `${uptime_hours.toString().padStart(2, '0')}:${uptime_minutes.toString().padStart(2, '0')}:${uptime_seconds.toString().padStart(2, '0')}`;
+                            document.getElementById('current_time').textContent = data.current_time;
 
                             if (data.mode === 'AUTO') {
                                 const minutes = Math.floor(data.remaining_seconds / 60);
