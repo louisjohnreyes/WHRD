@@ -36,7 +36,7 @@ def get_status():
     """Returns the current status of the curing process."""
     stage_name = list(CURING_STAGES.keys())[current_stage_index]
     setpoints = CURING_STAGES[stage_name]
-    target_temp = temperature + 1 if temperature else 0.0  # +1°C from current temperature
+    target_temp = auto_target_temp if current_mode == "AUTO" else setpoints["temp"]
     status = {
         "mode": current_mode,
         "stage": stage_name,
@@ -453,8 +453,8 @@ def main():
                                 stage_start_temp = setpoints.get("min_temp", 27.0)
                             print(f"Auto-advancing to stage: {stage_name}")
 
-                        # Calculate the elapsed time in hours
-                        elapsed_hours = (time.time() - stage_start_time) / 3600
+                        # Calculate the elapsed time in hours, rounded down to the nearest hour
+                        elapsed_hours = int((time.time() - stage_start_time) / 3600)
 
                         # Calculate the target temperature with a 1°C increase per hour
                         auto_target_temp = stage_start_temp + elapsed_hours
