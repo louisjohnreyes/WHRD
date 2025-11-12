@@ -342,8 +342,16 @@ def buzz(noteFreq, duration):
 
 def play_jingle_bells():
     """Plays the 'Jingle Bells' melody."""
-    notes = [392, 392, 392, 392, 392, 392, 392, 440, 330, 349, 392]
-    duration = [0.5, 0.5, 1, 0.5, 0.5, 1, 0.5, 0.5, 0.5, 0.5, 1]
+    E = 659
+    G = 784
+    A = 880
+    B = 988
+    C = 1047
+    D = 1175
+
+    notes = [B, B, B, B, B, B, B, D, G, A, B, C, C, C, C, C, B, B, B, B, A, A, B, A, D]
+    duration = [0.5, 0.5, 1, 0.5, 0.5, 1, 0.5, 0.5, 0.5, 0.5, 1, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.5, 0.5, 1, 1, 1]
+
     for i, note in enumerate(notes):
         buzz(note, duration[i])
         time.sleep(duration[i] * 0.1)
