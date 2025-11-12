@@ -36,12 +36,13 @@ def get_status():
     """Returns the current status of the curing process."""
     stage_name = list(CURING_STAGES.keys())[current_stage_index]
     setpoints = CURING_STAGES[stage_name]
+    target_temp = temperature + 1 if temperature else 0.0  # +1°C from current temperature
     status = {
         "mode": current_mode,
         "stage": stage_name,
         "temperature": temperature,
         "humidity": humidity,
-        "min_temp": setpoints["min_temp"],
+        "target_temp": target_temp,
         "max_temp": setpoints["max_temp"],
         "fan_on": fan_on,
         "dehumidifier_on": dehumidifier_on,
@@ -50,6 +51,7 @@ def get_status():
         "buzzer_on": buzzer_on
     }
     return jsonify(status)
+
 
 @app.route('/api/mode', methods=['POST'])
 def set_mode():
@@ -104,8 +106,8 @@ def index():
                     <div class="status-item"><strong>Mode:</strong> <span id="mode"></span></div>
                     <div class="status-item"><strong>Stage:</strong> <span id="stage"></span></div>
                     <div class="status-item"><strong>Temperature:</strong> <span id="temperature"></span> &deg;C</div>
-                    <div class="status-item"><strong>Min Temp:</strong> <span id="min_temp"></span> &deg;C</div>
-                    <div class="status-item"><strong>Maximum Target Temp:</strong> <span id="max_temp"></span> &deg;C</div>
+                    <div class="status-item"><strong>Target Temp:</strong> <span id="target_temp"></span> &deg;C</div>
+                    <div class="status-item"><strong>Max Temp:</strong> <span id="max_temp"></span> &deg;C</div>
                     <div class="status-item"><strong>Humidity:</strong> <span id="humidity"></span> %</div>
                     <div class="status-item"><strong>Fan 1:</strong> <span id="fan_on"></span></div>
                     <div class="status-item"><strong>Dehumidifier 1:</strong> <span id="dehumidifier_on"></span></div>
@@ -128,7 +130,7 @@ def index():
                             document.getElementById('mode').textContent = data.mode;
                             document.getElementById('stage').textContent = data.stage;
                             document.getElementById('temperature').textContent = data.temperature.toFixed(1);
-                            document.getElementById('min_temp').textContent = data.min_temp.toFixed(1);
+                            document.getElementById('target_temp').textContent = data.target_temp.toFixed(1);
                             document.getElementById('max_temp').textContent = data.max_temp.toFixed(1);
                             document.getElementById('humidity').textContent = data.humidity.toFixed(1);
                             document.getElementById('fan_on').textContent = data.fan_on ? 'ON' : 'OFF';
@@ -211,10 +213,10 @@ RELAY_ACTIVE_LOW = False
 # Curing stages configuration
 # =============================
 CURING_STAGES = {
-    "YELLOWING": {"temp": 35.0, "min_temp": 27.0, "max_temp": 40.0, "humidity": 85.0, "duration_hours": 48},
-    "LEAF_DRYING": {"temp": 50.0, "min_temp": 45.0, "max_temp": 55.0, "humidity": 70.0, "duration_hours": 24},
-    "MIDRIB_DRYING": {"temp": 65.0, "min_temp": 60.0, "max_temp": 70.0, "humidity": 50.0, "duration_hours": 24},
-    "ORDERING": {"temp": 25.0, "min_temp": 23.0, "max_temp": 27.0, "humidity": 80.0, "duration_hours": 12},
+    "YELLOWING": {"temp": 35.0, "min_temp": 27.0, "max_temp": 40.0, "humidity": 85.0, "duration_hours": 48, "ramp_fan_on": False},
+    "LEAF_DRYING": {"temp": 50.0, "min_temp": 45.0, "max_temp": 55.0, "humidity": 70.0, "duration_hours": 24, "ramp_fan_on": True},
+    "MIDRIB_DRYING": {"temp": 65.0, "min_temp": 60.0, "max_temp": 70.0, "humidity": 50.0, "duration_hours": 24, "ramp_fan_on": True},
+    "ORDERING": {"temp": 25.0, "min_temp": 23.0, "max_temp": 27.0, "humidity": 80.0, "duration_hours": 12, "ramp_fan_on": False},
 }
 
 # =============================
@@ -443,22 +445,41 @@ def main():
                         if time.time() - stage_start_time > stage_duration_seconds:
                             current_stage_index = (current_stage_index + 1) % len(stage_keys)
                             stage_start_time = time.time()
-                            print(f"Auto-advancing to stage: {stage_keys[current_stage_index]}")
+                            stage_name = stage_keys[current_stage_index]
+                            setpoints = CURING_STAGES[stage_name]
+                            if temperature is not None:
+                                stage_start_temp = temperature
+                            else:
+                                stage_start_temp = setpoints.get("min_temp", 27.0)
+                            print(f"Auto-advancing to stage: {stage_name}")
+
                         # Calculate the elapsed time in hours
                         elapsed_hours = (time.time() - stage_start_time) / 3600
 
                         # Calculate the target temperature with a 1°C increase per hour
                         auto_target_temp = stage_start_temp + elapsed_hours
 
-                        # Clamp the target temperature to the max for the stage
-                        auto_target_temp = min(auto_target_temp, setpoints["max_temp"])
+                        # Determine if we are in the ramp-up phase or maintenance phase
+                        if auto_target_temp < setpoints["max_temp"]:
+                            # Ramp-up phase
+                            fan_on = setpoints.get("ramp_fan_on", False)
 
-                        if temperature < auto_target_temp - 2:
-                            dehumidifier_on = True
-                            fan_on = True
-                        elif temperature > auto_target_temp + 2:
-                            dehumidifier_on = False
-                            fan_on = False
+                            # Dehumidifier controls temperature based on ramping target
+                            if temperature < auto_target_temp - 2:
+                                dehumidifier_on = True
+                            elif temperature > auto_target_temp + 2:
+                                dehumidifier_on = False
+                        else:
+                            # Maintenance phase (target temperature is max_temp)
+                            auto_target_temp = setpoints["max_temp"]
+
+                            # Hysteresis control for both fan and dehumidifier
+                            if temperature < auto_target_temp - 2:
+                                dehumidifier_on = True
+                                fan_on = True
+                            elif temperature > auto_target_temp + 2:
+                                dehumidifier_on = False
+                                fan_on = False
                     else: # MANUAL mode
                         if fan_button_pressed and (time.time() - last_fan_press > 0.2):
                             last_fan_press = time.time()
