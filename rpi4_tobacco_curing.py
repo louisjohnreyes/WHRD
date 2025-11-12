@@ -398,12 +398,32 @@ def main():
 
     setup_gpio()
     dht_device = adafruit_dht.DHT22(DHT_PIN)
+
+    # Perform an initial sensor reading to ensure we start with valid data
+    print("Getting initial sensor reading...")
+    temperature = None
+    while temperature is None:
+        try:
+            temperature = dht_device.temperature
+            humidity = dht_device.humidity
+            if temperature is None:
+                print("Failed to get initial DHT22 reading, retrying...")
+                time.sleep(2)
+        except RuntimeError as error:
+            print(f"Initial sensor read error: {error.args[0]}. Retrying...")
+            time.sleep(2)
+    print(f"Initial reading: Temp={temperature:.1f}C, Hum={humidity:.1f}%")
+
     stage_keys = list(CURING_STAGES.keys())
     stage_start_time = time.time()
     last_mode_press = 0
     last_stage_press = 0
     last_fan_press = 0
     last_dehumidifier_press = 0
+
+    # Initialize temperature state variables
+    stage_start_temp = temperature
+    auto_target_temp = stage_start_temp + 1.0
 
     try:
         lcd.clear()
@@ -456,8 +476,8 @@ def main():
                         # Calculate the elapsed time in hours, rounded down to the nearest hour
                         elapsed_hours = int((time.time() - stage_start_time) / 3600)
 
-                        # Calculate the target temperature with a 1°C increase per hour
-                        auto_target_temp = stage_start_temp + elapsed_hours
+                        # The target temperature starts at initial_temp + 1 and increases by 1°C each hour thereafter
+                        auto_target_temp = stage_start_temp + 1 + elapsed_hours
 
                         # Determine if we are in the ramp-up phase or maintenance phase
                         if auto_target_temp < setpoints["max_temp"]:
