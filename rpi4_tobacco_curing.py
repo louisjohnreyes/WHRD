@@ -37,6 +37,12 @@ def get_status():
     stage_name = list(CURING_STAGES.keys())[current_stage_index]
     setpoints = CURING_STAGES[stage_name]
     target_temp = auto_target_temp if current_mode == "AUTO" else 0.0
+
+    remaining_seconds = 0
+    if current_mode == "AUTO":
+        elapsed_since_start = time.time() - stage_start_time
+        remaining_seconds = 3600 - (elapsed_since_start % 3600)
+
     status = {
         "mode": current_mode,
         "stage": stage_name,
@@ -48,7 +54,8 @@ def get_status():
         "dehumidifier_on": dehumidifier_on,
         "fan_on_2": fan_on,
         "dehumidifier_on_2": dehumidifier_on,
-        "buzzer_on": buzzer_on
+        "buzzer_on": buzzer_on,
+        "remaining_seconds": remaining_seconds
     }
     return jsonify(status)
 
@@ -108,6 +115,7 @@ def index():
                     <div class="status-item"><strong>Temperature:</strong> <span id="temperature"></span> &deg;C</div>
                     <div class="status-item"><strong>Target Temp:</strong> <span id="target_temp"></span> &deg;C</div>
                     <div class="status-item"><strong>Max Temp:</strong> <span id="max_temp"></span> &deg;C</div>
+                    <div class="status-item"><strong>Next Temp Increase:</strong> <span id="next_temp_increase"></span></div>
                     <div class="status-item"><strong>Humidity:</strong> <span id="humidity"></span> %</div>
                     <div class="status-item"><strong>Fan 1:</strong> <span id="fan_on"></span></div>
                     <div class="status-item"><strong>Dehumidifier 1:</strong> <span id="dehumidifier_on"></span></div>
@@ -138,6 +146,14 @@ def index():
                             document.getElementById('fan_on_2').textContent = data.fan_on_2 ? 'ON' : 'OFF';
                             document.getElementById('dehumidifier_on_2').textContent = data.dehumidifier_on_2 ? 'ON' : 'OFF';
                             document.getElementById('buzzer_on').textContent = data.buzzer_on ? 'ON' : 'OFF';
+
+                            if (data.mode === 'AUTO') {
+                                const minutes = Math.floor(data.remaining_seconds / 60);
+                                const seconds = Math.floor(data.remaining_seconds % 60);
+                                document.getElementById('next_temp_increase').textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                            } else {
+                                document.getElementById('next_temp_increase').textContent = 'N/A';
+                            }
 
                             // Disable manual controls in AUTO mode
                             const isAutoMode = data.mode === 'AUTO';
