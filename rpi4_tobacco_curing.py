@@ -330,11 +330,13 @@ def control_buzzer(buzzer_on):
     else:
         GPIO.output(BUZZER_PIN, GPIO.LOW)
 
-def update_relays(dehumidifier_on, fan_on):
+def update_relays(dehumidifier_on, fan_on, num_dehumidifiers=2):
     """Updates all relay states."""
     if dehumidifier_on:
-        relay_on(DEHUMIDIFIER_PIN)
-        relay_on(DEHUMIDIFIER_PIN_2)
+        if num_dehumidifiers >= 1:
+            relay_on(DEHUMIDIFIER_PIN)
+        if num_dehumidifiers == 2:
+            relay_on(DEHUMIDIFIER_PIN_2)
     else:
         relay_off(DEHUMIDIFIER_PIN)
         relay_off(DEHUMIDIFIER_PIN_2)
@@ -494,6 +496,7 @@ def main():
                     setpoints = CURING_STAGES[stage_name]
 
                     # Stage transition and control logic
+                    num_dehumidifiers = 2  # Default for manual mode
                     if current_mode == "AUTO":
                         # Calculate the elapsed time in hours, rounded down to the nearest hour
                         elapsed_hours = int((time.time() - stage_start_time) / 3600)
@@ -501,28 +504,29 @@ def main():
                         # The target temperature starts at initial_temp + 1 and increases by 1°C each hour thereafter
                         auto_target_temp = stage_start_temp + 1 + elapsed_hours
 
-                        # Determine if we are in the ramp-up phase or maintenance phase
-                        if auto_target_temp < setpoints["max_temp"]:
-                            # Ramp-up phase
-                            fan_on = setpoints.get("ramp_fan_on", False)
+                        # Stage-specific actuator setup
+                        if stage_name == "YELLOWING":
+                            fan_on = False
+                            num_dehumidifiers = 1
+                        elif stage_name in ["LEAF_DRYING", "MIDRIB_DRYING"]:
+                            fan_on = True
+                            num_dehumidifiers = 2
+                        elif stage_name == "ORDERING":
+                            fan_on = False
+                            dehumidifier_on = False
+                            num_dehumidifiers = 0
 
-                            # Dehumidifier controls temperature based on ramping target
-                            if temperature < auto_target_temp - 2:
-                                dehumidifier_on = True
-                            elif temperature > auto_target_temp + 2:
-                                dehumidifier_on = False
-                        else:
-                            # Maintenance phase (target temperature is max_temp)
-                            auto_target_temp = setpoints["max_temp"]
+                        # Temperature control logic for stages that require heating
+                        if stage_name != "ORDERING":
+                            # Determine the target temperature for hysteresis, capping at max_temp
+                            target_temp_for_hysteresis = min(auto_target_temp, setpoints["max_temp"])
 
-                            # Hysteresis control for both fan and dehumidifier
-                            if temperature < auto_target_temp - 2:
+                            # Apply hysteresis
+                            if temperature < target_temp_for_hysteresis - 2:
                                 dehumidifier_on = True
-                                fan_on = True
-                            elif temperature > auto_target_temp + 2:
+                            elif temperature > target_temp_for_hysteresis + 2:
                                 dehumidifier_on = False
-                                fan_on = False
-                    else: # MANUAL mode
+                    else:  # MANUAL mode
                         if fan_button_pressed and (time.time() - last_fan_press > 0.2):
                             last_fan_press = time.time()
                             fan_on = not fan_on
@@ -532,7 +536,7 @@ def main():
                             dehumidifier_on = not dehumidifier_on
 
                     # Update relays (fan, dehumidifier)
-                    update_relays(dehumidifier_on, fan_on)
+                    update_relays(dehumidifier_on, fan_on, num_dehumidifiers)
 
                     # Update LED indicators
                     update_leds(stage_name, current_mode)
