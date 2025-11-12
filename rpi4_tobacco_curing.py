@@ -36,12 +36,13 @@ def get_status():
     """Returns the current status of the curing process."""
     stage_name = list(CURING_STAGES.keys())[current_stage_index]
     setpoints = CURING_STAGES[stage_name]
+    target_temp = temperature + 1 if temperature else 0.0  # +1°C from current temperature
     status = {
         "mode": current_mode,
         "stage": stage_name,
         "temperature": temperature,
         "humidity": humidity,
-        "min_temp": setpoints["min_temp"],
+        "target_temp": target_temp,
         "max_temp": setpoints["max_temp"],
         "fan_on": fan_on,
         "dehumidifier_on": dehumidifier_on,
@@ -50,6 +51,7 @@ def get_status():
         "buzzer_on": buzzer_on
     }
     return jsonify(status)
+
 
 @app.route('/api/mode', methods=['POST'])
 def set_mode():
@@ -104,8 +106,8 @@ def index():
                     <div class="status-item"><strong>Mode:</strong> <span id="mode"></span></div>
                     <div class="status-item"><strong>Stage:</strong> <span id="stage"></span></div>
                     <div class="status-item"><strong>Temperature:</strong> <span id="temperature"></span> &deg;C</div>
-                    <div class="status-item"><strong>Min Temp:</strong> <span id="min_temp"></span> &deg;C</div>
-                    <div class="status-item"><strong>Maximum Target Temp:</strong> <span id="max_temp"></span> &deg;C</div>
+                    <div class="status-item"><strong>Target Temp:</strong> <span id="target_temp"></span> &deg;C</div>
+                    <div class="status-item"><strong>Max Temp:</strong> <span id="max_temp"></span> &deg;C</div>
                     <div class="status-item"><strong>Humidity:</strong> <span id="humidity"></span> %</div>
                     <div class="status-item"><strong>Fan 1:</strong> <span id="fan_on"></span></div>
                     <div class="status-item"><strong>Dehumidifier 1:</strong> <span id="dehumidifier_on"></span></div>
@@ -128,7 +130,7 @@ def index():
                             document.getElementById('mode').textContent = data.mode;
                             document.getElementById('stage').textContent = data.stage;
                             document.getElementById('temperature').textContent = data.temperature.toFixed(1);
-                            document.getElementById('min_temp').textContent = data.min_temp.toFixed(1);
+                            document.getElementById('target_temp').textContent = data.target_temp.toFixed(1);
                             document.getElementById('max_temp').textContent = data.max_temp.toFixed(1);
                             document.getElementById('humidity').textContent = data.humidity.toFixed(1);
                             document.getElementById('fan_on').textContent = data.fan_on ? 'ON' : 'OFF';
