@@ -330,6 +330,24 @@ def control_buzzer(buzzer_on):
     else:
         GPIO.output(BUZZER_PIN, GPIO.LOW)
 
+def buzz(noteFreq, duration):
+    """Generates a tone of a specific frequency and duration."""
+    halveWaveTime = 1 / (noteFreq * 2)
+    waves = int(duration * noteFreq)
+    for i in range(waves):
+        GPIO.output(BUZZER_PIN, True)
+        time.sleep(halveWaveTime)
+        GPIO.output(BUZZER_PIN, False)
+        time.sleep(halveWaveTime)
+
+def play_jingle_bells():
+    """Plays the 'Jingle Bells' melody."""
+    notes = [392, 392, 392, 392, 392, 392, 392, 440, 330, 349, 392]
+    duration = [0.5, 0.5, 1, 0.5, 0.5, 1, 0.5, 0.5, 0.5, 0.5, 1]
+    for i, note in enumerate(notes):
+        buzz(note, duration[i])
+        time.sleep(duration[i] * 0.1)
+
 def update_relays(dehumidifier_on, fan_on):
     """Updates all relay states."""
     if dehumidifier_on:
@@ -431,6 +449,7 @@ def main():
     global current_mode, current_stage_index, stage_start_time, fan_on, dehumidifier_on, buzzer_on, temperature, humidity, stage_start_temp, auto_target_temp
 
     setup_gpio()
+    play_jingle_bells()
     dht_device = adafruit_dht.DHT22(DHT_PIN)
 
     # Perform an initial sensor reading to ensure we start with valid data
