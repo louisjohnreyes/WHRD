@@ -22,11 +22,13 @@ import threading
 import csv
 import os
 from flask import Flask, jsonify, render_template_string
+from datetime import datetime
 
 # =============================
 # LCD Configuration
 # =============================
 app = Flask(__name__)
+SCRIPT_START_TIME = time.time()
 
 # =============================
 # Web Server Routes
@@ -36,7 +38,16 @@ def get_status():
     """Returns the current status of the curing process."""
     stage_name = list(CURING_STAGES.keys())[current_stage_index]
     setpoints = CURING_STAGES[stage_name]
-    target_temp = temperature + 1 if temperature else 0.0  # +1°C from current temperature
+    target_temp = auto_target_temp if current_mode == "AUTO" else 0.0
+
+    remaining_seconds = 0
+    if current_mode == "AUTO":
+        elapsed_since_start = time.time() - stage_start_time
+        remaining_seconds = 3600 - (elapsed_since_start % 3600)
+
+    uptime = time.time() - SCRIPT_START_TIME
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     status = {
         "mode": current_mode,
         "stage": stage_name,
@@ -48,7 +59,10 @@ def get_status():
         "dehumidifier_on": dehumidifier_on,
         "fan_on_2": fan_on,
         "dehumidifier_on_2": dehumidifier_on,
-        "buzzer_on": buzzer_on
+        "buzzer_on": buzzer_on,
+        "remaining_seconds": remaining_seconds,
+        "uptime": uptime,
+        "current_time": current_time
     }
     return jsonify(status)
 
@@ -93,6 +107,7 @@ def index():
             <style>
                 body { font-family: sans-serif; }
                 .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { display: flex; justify-content: space-between; margin-bottom: 20px; }
                 .status { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
                 .status-item { padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
                 .controls { margin-top: 20px; }
@@ -101,6 +116,10 @@ def index():
         </head>
         <body>
             <div class="container">
+                <div class="header">
+                    <div><strong>Uptime:</strong> <span id="uptime"></span></div>
+                    <div><strong>Time:</strong> <span id="current_time"></span></div>
+                </div>
                 <h1>Tobacco Curing Control</h1>
                 <div class="status">
                     <div class="status-item"><strong>Mode:</strong> <span id="mode"></span></div>
@@ -108,6 +127,7 @@ def index():
                     <div class="status-item"><strong>Temperature:</strong> <span id="temperature"></span> &deg;C</div>
                     <div class="status-item"><strong>Target Temp:</strong> <span id="target_temp"></span> &deg;C</div>
                     <div class="status-item"><strong>Max Temp:</strong> <span id="max_temp"></span> &deg;C</div>
+                    <div class="status-item"><strong>Next Temp Increase:</strong> <span id="next_temp_increase"></span></div>
                     <div class="status-item"><strong>Humidity:</strong> <span id="humidity"></span> %</div>
                     <div class="status-item"><strong>Fan 1:</strong> <span id="fan_on"></span></div>
                     <div class="status-item"><strong>Dehumidifier 1:</strong> <span id="dehumidifier_on"></span></div>
@@ -138,6 +158,20 @@ def index():
                             document.getElementById('fan_on_2').textContent = data.fan_on_2 ? 'ON' : 'OFF';
                             document.getElementById('dehumidifier_on_2').textContent = data.dehumidifier_on_2 ? 'ON' : 'OFF';
                             document.getElementById('buzzer_on').textContent = data.buzzer_on ? 'ON' : 'OFF';
+
+                            const uptime_hours = Math.floor(data.uptime / 3600);
+                            const uptime_minutes = Math.floor((data.uptime % 3600) / 60);
+                            const uptime_seconds = Math.floor(data.uptime % 60);
+                            document.getElementById('uptime').textContent = `${uptime_hours.toString().padStart(2, '0')}:${uptime_minutes.toString().padStart(2, '0')}:${uptime_seconds.toString().padStart(2, '0')}`;
+                            document.getElementById('current_time').textContent = data.current_time;
+
+                            if (data.mode === 'AUTO') {
+                                const minutes = Math.floor(data.remaining_seconds / 60);
+                                const seconds = Math.floor(data.remaining_seconds % 60);
+                                document.getElementById('next_temp_increase').textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                            } else {
+                                document.getElementById('next_temp_increase').textContent = 'N/A';
+                            }
 
                             // Disable manual controls in AUTO mode
                             const isAutoMode = data.mode === 'AUTO';
@@ -213,10 +247,10 @@ RELAY_ACTIVE_LOW = False
 # Curing stages configuration
 # =============================
 CURING_STAGES = {
-    "YELLOWING": {"temp": 35.0, "min_temp": 27.0, "max_temp": 40.0, "humidity": 85.0, "duration_hours": 48, "ramp_fan_on": False},
-    "LEAF_DRYING": {"temp": 50.0, "min_temp": 45.0, "max_temp": 55.0, "humidity": 70.0, "duration_hours": 24, "ramp_fan_on": True},
-    "MIDRIB_DRYING": {"temp": 65.0, "min_temp": 60.0, "max_temp": 70.0, "humidity": 50.0, "duration_hours": 24, "ramp_fan_on": True},
-    "ORDERING": {"temp": 25.0, "min_temp": 23.0, "max_temp": 27.0, "humidity": 80.0, "duration_hours": 12, "ramp_fan_on": False},
+    "YELLOWING": {"min_temp": 27.0, "max_temp": 40.0, "humidity": 85.0, "ramp_fan_on": False},
+    "LEAF_DRYING": {"min_temp": 45.0, "max_temp": 55.0, "humidity": 70.0, "ramp_fan_on": True},
+    "MIDRIB_DRYING": {"min_temp": 60.0, "max_temp": 70.0, "humidity": 50.0, "ramp_fan_on": True},
+    "ORDERING": {"min_temp": 23.0, "max_temp": 27.0, "humidity": 80.0, "ramp_fan_on": False},
 }
 
 # =============================
@@ -398,12 +432,32 @@ def main():
 
     setup_gpio()
     dht_device = adafruit_dht.DHT22(DHT_PIN)
+
+    # Perform an initial sensor reading to ensure we start with valid data
+    print("Getting initial sensor reading...")
+    temperature = None
+    while temperature is None:
+        try:
+            temperature = dht_device.temperature
+            humidity = dht_device.humidity
+            if temperature is None:
+                print("Failed to get initial DHT22 reading, retrying...")
+                time.sleep(2)
+        except RuntimeError as error:
+            print(f"Initial sensor read error: {error.args[0]}. Retrying...")
+            time.sleep(2)
+    print(f"Initial reading: Temp={temperature:.1f}C, Hum={humidity:.1f}%")
+
     stage_keys = list(CURING_STAGES.keys())
     stage_start_time = time.time()
     last_mode_press = 0
     last_stage_press = 0
     last_fan_press = 0
     last_dehumidifier_press = 0
+
+    # Initialize temperature state variables
+    stage_start_temp = temperature
+    auto_target_temp = stage_start_temp + 1.0
 
     try:
         lcd.clear()
@@ -441,23 +495,11 @@ def main():
 
                     # Stage transition and control logic
                     if current_mode == "AUTO":
-                        stage_duration_seconds = setpoints["duration_hours"] * 3600
-                        if time.time() - stage_start_time > stage_duration_seconds:
-                            current_stage_index = (current_stage_index + 1) % len(stage_keys)
-                            stage_start_time = time.time()
-                            stage_name = stage_keys[current_stage_index]
-                            setpoints = CURING_STAGES[stage_name]
-                            if temperature is not None:
-                                stage_start_temp = temperature
-                            else:
-                                stage_start_temp = setpoints.get("min_temp", 27.0)
-                            print(f"Auto-advancing to stage: {stage_name}")
+                        # Calculate the elapsed time in hours, rounded down to the nearest hour
+                        elapsed_hours = int((time.time() - stage_start_time) / 3600)
 
-                        # Calculate the elapsed time in hours
-                        elapsed_hours = (time.time() - stage_start_time) / 3600
-
-                        # Calculate the target temperature with a 1°C increase per hour
-                        auto_target_temp = stage_start_temp + elapsed_hours
+                        # The target temperature starts at initial_temp + 1 and increases by 1°C each hour thereafter
+                        auto_target_temp = stage_start_temp + 1 + elapsed_hours
 
                         # Determine if we are in the ramp-up phase or maintenance phase
                         if auto_target_temp < setpoints["max_temp"]:

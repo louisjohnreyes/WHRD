@@ -1,0 +1,7 @@
+RPi.GPIO
+adafruit-circuitpython-dht
+RPLCD
+Flask
+smbus
+smbus2
+mock_gpio
