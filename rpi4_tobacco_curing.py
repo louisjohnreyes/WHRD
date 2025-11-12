@@ -9,13 +9,11 @@
 
 try:
     import RPi.GPIO as GPIO
-    import board
-    import adafruit_dht
+    from sht20 import SHT20
     from RPLCD.i2c import CharLCD
 except (RuntimeError, ImportError):
     import mock_gpio as GPIO
-    import mock_board as board
-    import mock_adafruit_dht as adafruit_dht
+    from mock_sht20 import SHT20
     from mock_rplcd import CharLCD
 import time
 import threading
@@ -180,7 +178,6 @@ cols=20, rows=4, dotsize=8)
 # =============================
 # Pin definitions (BCM numbering)
 # =============================
-DHT_PIN = board.D4 # DHT sensor data pin connected to GPIO 4
 FAN_PIN = 17
 DEHUMIDIFIER_PIN = 27
 FAN_PIN_2 = 22
@@ -397,7 +394,7 @@ def main():
     global current_mode, current_stage_index, stage_start_time, fan_on, dehumidifier_on, buzzer_on, temperature, humidity, stage_start_temp, auto_target_temp
 
     setup_gpio()
-    dht_device = adafruit_dht.DHT22(DHT_PIN)
+    sht = SHT20(1)
     stage_keys = list(CURING_STAGES.keys())
     stage_start_time = time.time()
     last_mode_press = 0
@@ -433,84 +430,91 @@ def main():
 
             # Sensor reading
             try:
-                temperature = dht_device.temperature
-                humidity = dht_device.humidity
-                if temperature is not None and humidity is not None:
-                    stage_name = stage_keys[current_stage_index]
-                    setpoints = CURING_STAGES[stage_name]
+                temperature = sht.read_temp()
+                humidity = sht.read_humid()
+                stage_name = stage_keys[current_stage_index]
+                setpoints = CURING_STAGES[stage_name]
 
-                    # Stage transition and control logic
-                    if current_mode == "AUTO":
-                        stage_duration_seconds = setpoints["duration_hours"] * 3600
-                        if time.time() - stage_start_time > stage_duration_seconds:
-                            current_stage_index = (current_stage_index + 1) % len(stage_keys)
-                            stage_start_time = time.time()
-                            stage_name = stage_keys[current_stage_index]
-                            setpoints = CURING_STAGES[stage_name]
-                            if temperature is not None:
-                                stage_start_temp = temperature
-                            else:
-                                stage_start_temp = setpoints.get("min_temp", 27.0)
-                            print(f"Auto-advancing to stage: {stage_name}")
-
-                        # Calculate the elapsed time in hours
-                        elapsed_hours = (time.time() - stage_start_time) / 3600
-
-                        # Calculate the target temperature with a 1°C increase per hour
-                        auto_target_temp = stage_start_temp + elapsed_hours
-
-                        # Determine if we are in the ramp-up phase or maintenance phase
-                        if auto_target_temp < setpoints["max_temp"]:
-                            # Ramp-up phase
-                            fan_on = setpoints.get("ramp_fan_on", False)
-
-                            # Dehumidifier controls temperature based on ramping target
-                            if temperature < auto_target_temp - 2:
-                                dehumidifier_on = True
-                            elif temperature > auto_target_temp + 2:
-                                dehumidifier_on = False
+                # Stage transition and control logic
+                if current_mode == "AUTO":
+                    stage_duration_seconds = setpoints["duration_hours"] * 3600
+                    if time.time() - stage_start_time > stage_duration_seconds:
+                        current_stage_index = (current_stage_index + 1) % len(stage_keys)
+                        stage_start_time = time.time()
+                        stage_name = stage_keys[current_stage_index]
+                        setpoints = CURING_STAGES[stage_name]
+                        if temperature is not None:
+                            stage_start_temp = temperature
                         else:
-                            # Maintenance phase (target temperature is max_temp)
-                            auto_target_temp = setpoints["max_temp"]
+                            stage_start_temp = setpoints.get("min_temp", 27.0)
+                        print(f"Auto-advancing to stage: {stage_name}")
 
-                            # Hysteresis control for both fan and dehumidifier
-                            if temperature < auto_target_temp - 2:
-                                dehumidifier_on = True
-                                fan_on = True
-                            elif temperature > auto_target_temp + 2:
-                                dehumidifier_on = False
-                                fan_on = False
-                    else: # MANUAL mode
-                        if fan_button_pressed and (time.time() - last_fan_press > 0.2):
-                            last_fan_press = time.time()
-                            fan_on = not fan_on
+                    # Calculate the elapsed time in hours
+                    elapsed_hours = (time.time() - stage_start_time) / 3600
 
-                        if dehumidifier_button_pressed and (time.time() - last_dehumidifier_press > 0.2):
-                            last_dehumidifier_press = time.time()
-                            dehumidifier_on = not dehumidifier_on
+                    # Calculate the target temperature with a 1°C increase per hour
+                    auto_target_temp = stage_start_temp + elapsed_hours
 
-                    # Update relays (fan, dehumidifier)
-                    update_relays(dehumidifier_on, fan_on)
+                    # Determine if we are in the ramp-up phase or maintenance phase
+                    if auto_target_temp < setpoints["max_temp"]:
+                        # Ramp-up phase
+                        fan_on = setpoints.get("ramp_fan_on", False)
 
-                    # Update LED indicators
-                    update_leds(stage_name, current_mode)
+                        # Dehumidifier controls temperature based on ramping target
+                        if temperature < auto_target_temp - 2:
+                            dehumidifier_on = True
+                        elif temperature > auto_target_temp + 2:
+                            dehumidifier_on = False
+                    else:
+                        # Maintenance phase (target temperature is max_temp)
+                        auto_target_temp = setpoints["max_temp"]
 
-                    # Temperature alarm
-                    buzzer_on = not (setpoints["min_temp"] <= temperature <= setpoints["max_temp"])
-                    control_buzzer(buzzer_on)
+                        # Hysteresis control for both fan and dehumidifier
+                        if temperature < auto_target_temp - 2:
+                            dehumidifier_on = True
+                            fan_on = True
+                        elif temperature > auto_target_temp + 2:
+                            dehumidifier_on = False
+                            fan_on = False
+                else: # MANUAL mode
+                    if fan_button_pressed and (time.time() - last_fan_press > 0.2):
+                        last_fan_press = time.time()
+                        fan_on = not fan_on
 
-                    # Update LCD display
-                    update_lcd(temperature, humidity, stage_name, current_mode, fan_on, dehumidifier_on)
+                    if dehumidifier_button_pressed and (time.time() - last_dehumidifier_press > 0.2):
+                        last_dehumidifier_press = time.time()
+                        dehumidifier_on = not dehumidifier_on
 
-                    # Console feedback
-                    print(f"Stage: {stage_name}, Mode: {current_mode}, Temp: {temperature:.1f}°C, Hum: {humidity:.1f}%")
-                    print(f"Dehumidifier: {'ON' if dehumidifier_on else 'OFF'}, Fan: {'ON' if fan_on else 'OFF'}")
+                # Update relays (fan, dehumidifier)
+                update_relays(dehumidifier_on, fan_on)
 
-                    # Log data
-                    log_data(time.time(), temperature, humidity, stage_name, current_mode, fan_on, dehumidifier_on, fan_on, dehumidifier_on, buzzer_on)
+                # Update LED indicators
+                update_leds(stage_name, current_mode)
 
-            except RuntimeError as error:
-                print(error.args[0])
+                # Temperature alarm
+                buzzer_on = not (setpoints["min_temp"] <= temperature <= setpoints["max_temp"])
+                control_buzzer(buzzer_on)
+
+                # Update LCD display
+                update_lcd(temperature, humidity, stage_name, current_mode, fan_on, dehumidifier_on)
+
+                # Console feedback
+                print(f"Stage: {stage_name}, Mode: {current_mode}, Temp: {temperature:.1f}°C, Hum: {humidity:.1f}%")
+                print(f"Dehumidifier: {'ON' if dehumidifier_on else 'OFF'}, Fan: {'ON' if fan_on else 'OFF'}")
+
+                # Log data
+                log_data(time.time(), temperature, humidity, stage_name, current_mode, fan_on, dehumidifier_on, fan_on, dehumidifier_on, buzzer_on)
+
+            except (RuntimeError, IOError) as error:
+                print(f"Sensor reading failed: {error}")
+                # Turn off all actuators
+                dehumidifier_on = False
+                fan_on = False
+                update_relays(dehumidifier_on, fan_on)
+
+                # Display error on LCD
+                lcd.clear()
+                lcd.write_string("Sensor Error!")
 
             time.sleep(0.5)
     finally:

@@ -1,0 +1,23 @@
+SHT20 Sensor Wiring Diagram for Raspberry Pi:
+
+This diagram shows how to connect the SHT20 Temperature and Humidity Sensor to the Raspberry Pi's GPIO pins.
+
+Connections:
+- SHT20 VCC --> Raspberry Pi 3.3V (Pin 1)
+- SHT20 GND --> Raspberry Pi GND (Pin 6)
+- SHT20 SDA --> Raspberry Pi GPIO 2 (SDA) (Pin 3)
+- SHT20 SCL --> Raspberry Pi GPIO 3 (SCL) (Pin 5)
+
+   +-----------------+        +-----------------+
+   | Raspberry Pi    |        | SHT20 Sensor    |
+   |                 |        |                 |
+   |   3.3V (Pin 1)  | ------ | VCC             |
+   |    GND (Pin 6)  | ------ | GND             |
+   | GPIO 2 (Pin 3)  | ------ | SDA             |
+   | GPIO 3 (Pin 5)  | ------ | SCL             |
+   |                 |        |                 |
+   +-----------------+        +-----------------+
+
+Note:
+- Ensure that the I2C interface is enabled on your Raspberry Pi. You can do this by running `sudo raspi-config` and navigating to "Interfacing Options" > "I2C".
+- The pin numbers in this diagram are based on the Raspberry Pi's physical pin layout.
