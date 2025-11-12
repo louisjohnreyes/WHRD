@@ -36,7 +36,7 @@ def get_status():
     """Returns the current status of the curing process."""
     stage_name = list(CURING_STAGES.keys())[current_stage_index]
     setpoints = CURING_STAGES[stage_name]
-    target_temp = auto_target_temp if current_mode == "AUTO" else setpoints["temp"]
+    target_temp = auto_target_temp if current_mode == "AUTO" else 0.0
     status = {
         "mode": current_mode,
         "stage": stage_name,
@@ -213,10 +213,10 @@ RELAY_ACTIVE_LOW = False
 # Curing stages configuration
 # =============================
 CURING_STAGES = {
-    "YELLOWING": {"temp": 35.0, "min_temp": 27.0, "max_temp": 40.0, "humidity": 85.0, "duration_hours": 48, "ramp_fan_on": False},
-    "LEAF_DRYING": {"temp": 50.0, "min_temp": 45.0, "max_temp": 55.0, "humidity": 70.0, "duration_hours": 24, "ramp_fan_on": True},
-    "MIDRIB_DRYING": {"temp": 65.0, "min_temp": 60.0, "max_temp": 70.0, "humidity": 50.0, "duration_hours": 24, "ramp_fan_on": True},
-    "ORDERING": {"temp": 25.0, "min_temp": 23.0, "max_temp": 27.0, "humidity": 80.0, "duration_hours": 12, "ramp_fan_on": False},
+    "YELLOWING": {"min_temp": 27.0, "max_temp": 40.0, "humidity": 85.0, "ramp_fan_on": False},
+    "LEAF_DRYING": {"min_temp": 45.0, "max_temp": 55.0, "humidity": 70.0, "ramp_fan_on": True},
+    "MIDRIB_DRYING": {"min_temp": 60.0, "max_temp": 70.0, "humidity": 50.0, "ramp_fan_on": True},
+    "ORDERING": {"min_temp": 23.0, "max_temp": 27.0, "humidity": 80.0, "ramp_fan_on": False},
 }
 
 # =============================
@@ -461,18 +461,6 @@ def main():
 
                     # Stage transition and control logic
                     if current_mode == "AUTO":
-                        stage_duration_seconds = setpoints["duration_hours"] * 3600
-                        if time.time() - stage_start_time > stage_duration_seconds:
-                            current_stage_index = (current_stage_index + 1) % len(stage_keys)
-                            stage_start_time = time.time()
-                            stage_name = stage_keys[current_stage_index]
-                            setpoints = CURING_STAGES[stage_name]
-                            if temperature is not None:
-                                stage_start_temp = temperature
-                            else:
-                                stage_start_temp = setpoints.get("min_temp", 27.0)
-                            print(f"Auto-advancing to stage: {stage_name}")
-
                         # Calculate the elapsed time in hours, rounded down to the nearest hour
                         elapsed_hours = int((time.time() - stage_start_time) / 3600)
 
