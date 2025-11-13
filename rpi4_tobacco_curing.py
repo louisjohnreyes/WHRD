@@ -538,7 +538,10 @@ def main():
                     update_leds(stage_name, current_mode)
 
                     # Temperature alarm
-                    buzzer_on = not (setpoints["min_temp"] <= temperature <= setpoints["max_temp"])
+                    if current_mode == "AUTO":
+                        buzzer_on = not (auto_target_temp - 2 <= temperature <= auto_target_temp + 2)
+                    else: # MANUAL
+                        buzzer_on = not (setpoints["min_temp"] <= temperature <= setpoints["max_temp"])
                     control_buzzer(buzzer_on)
 
                     # Update LCD display
