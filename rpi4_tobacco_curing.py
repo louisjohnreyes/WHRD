@@ -241,7 +241,7 @@ MANUAL_MODE_LED_PIN = 25
 # =============================
 # Set this to True if your relays are active LOW (most common)
 # Set to False if active HIGH
-RELAY_ACTIVE_LOW = False
+RELAY_ACTIVE_LOW = True
 
 # =============================
 # Curing stages configuration
@@ -266,6 +266,8 @@ dehumidifier_on = False
 buzzer_on = False
 temperature = 0.0
 humidity = 0.0
+last_dehumidifier_on = None
+last_fan_on = None
 
 # =============================
 # GPIO Setup
@@ -332,19 +334,25 @@ def control_buzzer(buzzer_on):
 
 def update_relays(dehumidifier_on, fan_on):
     """Updates all relay states."""
-    if dehumidifier_on:
-        relay_on(DEHUMIDIFIER_PIN)
-        relay_on(DEHUMIDIFIER_PIN_2)
-    else:
-        relay_off(DEHUMIDIFIER_PIN)
-        relay_off(DEHUMIDIFIER_PIN_2)
+    global last_dehumidifier_on, last_fan_on
 
-    if fan_on:
-        relay_on(FAN_PIN)
-        relay_on(FAN_PIN_2)
-    else:
-        relay_off(FAN_PIN)
-        relay_off(FAN_PIN_2)
+    if dehumidifier_on != last_dehumidifier_on:
+        if dehumidifier_on:
+            relay_on(DEHUMIDIFIER_PIN)
+            relay_on(DEHUMIDIFIER_PIN_2)
+        else:
+            relay_off(DEHUMIDIFIER_PIN)
+            relay_off(DEHUMIDIFIER_PIN_2)
+        last_dehumidifier_on = dehumidifier_on
+
+    if fan_on != last_fan_on:
+        if fan_on:
+            relay_on(FAN_PIN)
+            relay_on(FAN_PIN_2)
+        else:
+            relay_off(FAN_PIN)
+            relay_off(FAN_PIN_2)
+        last_fan_on = fan_on
 
 # =============================
 # LCD Update Function
@@ -537,8 +545,11 @@ def main():
                     # Update LED indicators
                     update_leds(stage_name, current_mode)
 
-                    # Temperature alarm
-                    buzzer_on = not (setpoints["min_temp"] <= temperature <= setpoints["max_temp"])
+                    # Temperature alarm logic
+                    if current_mode == "AUTO":
+                        buzzer_on = not (auto_target_temp - 2 <= temperature <= auto_target_temp + 2)
+                    else: # MANUAL
+                        buzzer_on = not (setpoints["min_temp"] <= temperature <= setpoints["max_temp"])
                     control_buzzer(buzzer_on)
 
                     # Update LCD display
