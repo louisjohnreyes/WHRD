@@ -214,11 +214,12 @@ cols=20, rows=4, dotsize=8)
 # =============================
 # Pin definitions (BCM numbering)
 # =============================
+# See wiring_diagram.md for details on connecting these components.
 DHT_PIN = board.D4 # DHT sensor data pin connected to GPIO 4
-FAN_PIN = 17
-DEHUMIDIFIER_PIN = 27
-FAN_PIN_2 = 22
-DEHUMIDIFIER_PIN_2 = 23
+DEHUMIDIFIER_PIN = 23
+DEHUMIDIFIER_PIN_2 = 24
+FAN_PIN = 25
+FAN_PIN_2 = 26
 BUZZER_PIN = 24
 
 # Button definitions
@@ -239,9 +240,10 @@ MANUAL_MODE_LED_PIN = 25
 # =============================
 # Relay configuration
 # =============================
-# Set this to True if your relays are active LOW (most common)
-# Set to False if active HIGH
-RELAY_ACTIVE_LOW = False
+# Most common relay modules are "active LOW", meaning the relay turns ON
+# when the GPIO pin is set to LOW (0V). If your relays turn ON with a HIGH
+# signal, set this to False.
+RELAY_ACTIVE_LOW = True
 
 # =============================
 # Curing stages configuration
