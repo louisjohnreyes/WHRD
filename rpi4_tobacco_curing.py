@@ -214,7 +214,7 @@ cols=20, rows=4, dotsize=8)
 # =============================
 # Pin definitions (BCM numbering)
 # =============================
-DHT_PIN = board.D4 # DHT sensor data pin connected to GPIO 4
+DHT_PIN = board.D7 # DHT sensor data pin connected to GPIO 7
 FAN_PIN = 17
 DEHUMIDIFIER_PIN = 27
 FAN_PIN_2 = 22
@@ -224,16 +224,16 @@ BUZZER_PIN = 24
 # Button definitions
 MODE_BUTTON_PIN = 5
 STAGE_BUTTON_PIN = 6
-FAN_BUTTON_PIN = 13
-DEHUMIDIFIER_BUTTON_PIN = 19
+FAN_BUTTON_PIN = 8
+DEHUMIDIFIER_BUTTON_PIN = 9
 
 # LED Indicator definitions
 YELLOWING_LED_PIN = 16
-LEAF_DRYING_LED_PIN = 20
-MIDRIB_DRYING_LED_PIN = 21
+LEAF_DRYING_LED_PIN = 10
+MIDRIB_DRYING_LED_PIN = 11
 ORDERING_LED_PIN = 26
 
-AUTO_MODE_LED_PIN = 12
+AUTO_MODE_LED_PIN = 18
 MANUAL_MODE_LED_PIN = 25
 
 # =============================
