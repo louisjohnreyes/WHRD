@@ -241,7 +241,7 @@ MANUAL_MODE_LED_PIN = 25
 # =============================
 # Set this to True if your relays are active LOW (most common)
 # Set to False if active HIGH
-RELAY_ACTIVE_LOW = False
+RELAY_ACTIVE_LOW = True
 
 # =============================
 # Curing stages configuration
@@ -311,6 +311,7 @@ def setup_gpio():
 # =============================
 def relay_on(pin):
     """Turns ON the relay depending on the relay logic type."""
+    print(f"Setting relay on pin {pin} ON")
     if RELAY_ACTIVE_LOW:
         GPIO.output(pin, GPIO.LOW)
     else:
@@ -318,6 +319,7 @@ def relay_on(pin):
 
 def relay_off(pin):
     """Turns OFF the relay depending on the relay logic type."""
+    print(f"Setting relay on pin {pin} OFF")
     if RELAY_ACTIVE_LOW:
         GPIO.output(pin, GPIO.HIGH)
     else:
