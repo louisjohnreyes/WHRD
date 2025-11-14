@@ -21,7 +21,7 @@ import time
 import threading
 import csv
 import os
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify, render_template
 from datetime import datetime
 
 # =============================
@@ -98,115 +98,7 @@ def toggle_dehumidifier():
 @app.route('/')
 def index():
     """Serves the main HTML page."""
-    return render_template_string(
-        """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Tobacco Curing Control</title>
-            <style>
-                body { font-family: sans-serif; }
-                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                .header { display: flex; justify-content: space-between; margin-bottom: 20px; }
-                .status { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-                .status-item { padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
-                .controls { margin-top: 20px; }
-                .controls button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <div><strong>Uptime:</strong> <span id="uptime"></span></div>
-                    <div><strong>Time:</strong> <span id="current_time"></span></div>
-                </div>
-                <h1>Tobacco Curing Control</h1>
-                <div class="status">
-                    <div class="status-item"><strong>Mode:</strong> <span id="mode"></span></div>
-                    <div class="status-item"><strong>Stage:</strong> <span id="stage"></span></div>
-                    <div class="status-item"><strong>Temperature:</strong> <span id="temperature"></span> &deg;C</div>
-                    <div class="status-item"><strong>Target Temp:</strong> <span id="target_temp"></span> &deg;C</div>
-                    <div class="status-item"><strong>Max Temp:</strong> <span id="max_temp"></span> &deg;C</div>
-                    <div class="status-item"><strong>Next Temp Increase:</strong> <span id="next_temp_increase"></span></div>
-                    <div class="status-item"><strong>Humidity:</strong> <span id="humidity"></span> %</div>
-                    <div class="status-item"><strong>Fan 1:</strong> <span id="fan_on"></span></div>
-                    <div class="status-item"><strong>Dehumidifier 1:</strong> <span id="dehumidifier_on"></span></div>
-                    <div class="status-item"><strong>Fan 2:</strong> <span id="fan_on_2"></span></div>
-                    <div class="status-item"><strong>Dehumidifier 2:</strong> <span id="dehumidifier_on_2"></span></div>
-                    <div class="status-item"><strong>Buzzer:</strong> <span id="buzzer_on"></span></div>
-                </div>
-                <div class="controls">
-                    <button id="toggle-mode">Toggle Mode</button>
-                    <button id="next-stage">Next Stage</button>
-                    <button id="toggle-fan" disabled>Toggle Fan</button>
-                    <button id="toggle-dehumidifier" disabled>Toggle Dehumidifier</button>
-                </div>
-            </div>
-            <script>
-                function updateStatus() {
-                    fetch('/api/status')
-                        .then(response => response.json())
-                        .then(data => {
-                            document.getElementById('mode').textContent = data.mode;
-                            document.getElementById('stage').textContent = data.stage;
-                            document.getElementById('temperature').textContent = data.temperature.toFixed(1);
-                            document.getElementById('target_temp').textContent = data.target_temp.toFixed(1);
-                            document.getElementById('max_temp').textContent = data.max_temp.toFixed(1);
-                            document.getElementById('humidity').textContent = data.humidity.toFixed(1);
-                            document.getElementById('fan_on').textContent = data.fan_on ? 'ON' : 'OFF';
-                            document.getElementById('dehumidifier_on').textContent = data.dehumidifier_on ? 'ON' : 'OFF';
-                            document.getElementById('fan_on_2').textContent = data.fan_on_2 ? 'ON' : 'OFF';
-                            document.getElementById('dehumidifier_on_2').textContent = data.dehumidifier_on_2 ? 'ON' : 'OFF';
-                            document.getElementById('buzzer_on').textContent = data.buzzer_on ? 'ON' : 'OFF';
-
-                            const uptime_hours = Math.floor(data.uptime / 3600);
-                            const uptime_minutes = Math.floor((data.uptime % 3600) / 60);
-                            const uptime_seconds = Math.floor(data.uptime % 60);
-                            document.getElementById('uptime').textContent = `${uptime_hours.toString().padStart(2, '0')}:${uptime_minutes.toString().padStart(2, '0')}:${uptime_seconds.toString().padStart(2, '0')}`;
-                            document.getElementById('current_time').textContent = data.current_time;
-
-                            if (data.mode === 'AUTO') {
-                                const minutes = Math.floor(data.remaining_seconds / 60);
-                                const seconds = Math.floor(data.remaining_seconds % 60);
-                                document.getElementById('next_temp_increase').textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-                            } else {
-                                document.getElementById('next_temp_increase').textContent = 'N/A';
-                            }
-
-                            // Disable manual controls in AUTO mode
-                            const isAutoMode = data.mode === 'AUTO';
-                            document.getElementById('toggle-fan').disabled = isAutoMode;
-                            document.getElementById('toggle-dehumidifier').disabled = isAutoMode;
-                        });
-                }
-
-                document.getElementById('toggle-mode').addEventListener('click', () => {
-                    fetch('/api/mode', { method: 'POST' })
-                        .then(() => updateStatus());
-                });
-
-                document.getElementById('next-stage').addEventListener('click', () => {
-                    fetch('/api/stage', { method: 'POST' })
-                        .then(() => updateStatus());
-                });
-
-                document.getElementById('toggle-fan').addEventListener('click', () => {
-                    fetch('/api/fan', { method: 'POST' })
-                        .then(() => updateStatus());
-                });
-
-                document.getElementById('toggle-dehumidifier').addEventListener('click', () => {
-                    fetch('/api/dehumidifier', { method: 'POST' })
-                        .then(() => updateStatus());
-                });
-
-                setInterval(updateStatus, 2000);
-                updateStatus();
-            </script>
-        </body>
-        </html>
-        """
-    )
+    return render_template('index.html')
 
 lcd = CharLCD(i2c_expander='PCF8574', address=0x27, port=1,
 cols=20, rows=4, dotsize=8)
