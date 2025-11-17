@@ -17,6 +17,7 @@ except (RuntimeError, ImportError):
     import mock_board as board
     import mock_adafruit_dht as adafruit_dht
     from mock_rplcd import CharLCD
+    from mock_gpiozero import Servo
 import time
 import threading
 import csv
@@ -60,6 +61,7 @@ def get_status():
         "fan_on_2": fan_on,
         "dehumidifier_on_2": dehumidifier_on,
         "buzzer_on": buzzer_on,
+        "servo_position": servo_position,
         "remaining_seconds": remaining_seconds,
         "uptime": uptime,
         "current_time": current_time
@@ -94,6 +96,12 @@ def toggle_dehumidifier():
     global dehumidifier_on
     dehumidifier_on = not dehumidifier_on
     return jsonify({"dehumidifier_on": dehumidifier_on})
+
+@app.route('/api/servo', methods=['POST'])
+def api_servo():
+    """Controls the servo motor."""
+    control_servo()
+    return jsonify({"servo_position": servo_position})
 
 @app.route('/')
 def index():
@@ -134,12 +142,14 @@ def index():
                     <div class="status-item"><strong>Fan 2:</strong> <span id="fan_on_2"></span></div>
                     <div class="status-item"><strong>Dehumidifier 2:</strong> <span id="dehumidifier_on_2"></span></div>
                     <div class="status-item"><strong>Buzzer:</strong> <span id="buzzer_on"></span></div>
+                    <div class="status-item"><strong>Servo:</strong> <span id="servo_position"></span> &deg;</div>
                 </div>
                 <div class="controls">
                     <button id="toggle-mode">Toggle Mode</button>
                     <button id="next-stage">Next Stage</button>
                     <button id="toggle-fan" disabled>Toggle Fan</button>
                     <button id="toggle-dehumidifier" disabled>Toggle Dehumidifier</button>
+                    <button id="toggle-servo">Toggle Servo</button>
                 </div>
             </div>
             <script>
@@ -158,6 +168,7 @@ def index():
                             document.getElementById('fan_on_2').textContent = data.fan_on_2 ? 'ON' : 'OFF';
                             document.getElementById('dehumidifier_on_2').textContent = data.dehumidifier_on_2 ? 'ON' : 'OFF';
                             document.getElementById('buzzer_on').textContent = data.buzzer_on ? 'ON' : 'OFF';
+                            document.getElementById('servo_position').textContent = data.servo_position;
 
                             const uptime_hours = Math.floor(data.uptime / 3600);
                             const uptime_minutes = Math.floor((data.uptime % 3600) / 60);
@@ -200,6 +211,11 @@ def index():
                         .then(() => updateStatus());
                 });
 
+                document.getElementById('toggle-servo').addEventListener('click', () => {
+                    fetch('/api/servo', { method: 'POST' })
+                        .then(() => updateStatus());
+                });
+
                 setInterval(updateStatus, 2000);
                 updateStatus();
             </script>
@@ -220,18 +236,20 @@ DEHUMIDIFIER_PIN = 27
 FAN_PIN_2 = 22
 DEHUMIDIFIER_PIN_2 = 23
 BUZZER_PIN = 24
+SERVO_PIN = 18
 
 # Button definitions
 MODE_BUTTON_PIN = 5
 STAGE_BUTTON_PIN = 6
 FAN_BUTTON_PIN = 13
 DEHUMIDIFIER_BUTTON_PIN = 19
+SERVO_BUTTON_PIN = 26
 
 # LED Indicator definitions
 YELLOWING_LED_PIN = 16
 LEAF_DRYING_LED_PIN = 20
 MIDRIB_DRYING_LED_PIN = 21
-ORDERING_LED_PIN = 26
+ORDERING_LED_PIN = 7
 
 AUTO_MODE_LED_PIN = 12
 MANUAL_MODE_LED_PIN = 25
@@ -266,6 +284,23 @@ dehumidifier_on = False
 buzzer_on = False
 temperature = 0.0
 humidity = 0.0
+servo_position = 0
+
+# Servo setup
+servo = Servo(SERVO_PIN)
+
+def control_servo():
+    """Controls the servo motor."""
+    global servo_position
+    if servo_position == 0:
+        servo.value = -0.5 # 45 degrees
+        servo_position = 45
+    elif servo_position == 45:
+        servo.value = 0 # 90 degrees
+        servo_position = 90
+    else:
+        servo.value = -1 # 0 degrees
+        servo_position = 0
 
 # =============================
 # GPIO Setup
@@ -282,6 +317,7 @@ def setup_gpio():
     GPIO.setup(STAGE_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
     GPIO.setup(FAN_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
     GPIO.setup(DEHUMIDIFIER_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(SERVO_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
     # Output pins for LEDs
     GPIO.setup(YELLOWING_LED_PIN, GPIO.OUT)
@@ -349,12 +385,12 @@ def update_relays(dehumidifier_on, fan_on):
 # =============================
 # LCD Update Function
 # =============================
-def log_data(timestamp, temp, hum, stage, mode, fan_on, dehum_on, fan_on_2, dehum_on_2, alarm_on):
+def log_data(timestamp, temp, hum, stage, mode, fan_on, dehum_on, fan_on_2, dehum_on_2, alarm_on, servo_pos):
     """Logs the current state to a CSV file."""
     log_file = 'curing_log.csv'
     file_exists = os.path.isfile(log_file)
     with open(log_file, 'a', newline='') as csvfile:
-        fieldnames = ['timestamp', 'temperature', 'humidity', 'stage', 'mode', 'fan_on', 'dehumidifier_on', 'fan_on_2', 'dehumidifier_on_2', 'alarm_on']
+        fieldnames = ['timestamp', 'temperature', 'humidity', 'stage', 'mode', 'fan_on', 'dehumidifier_on', 'fan_on_2', 'dehumidifier_on_2', 'alarm_on', 'servo_position']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
         if not file_exists:
@@ -370,7 +406,8 @@ def log_data(timestamp, temp, hum, stage, mode, fan_on, dehum_on, fan_on_2, dehu
             'dehumidifier_on': dehum_on,
             'fan_on_2': fan_on_2,
             'dehumidifier_on_2': dehum_on_2,
-            'alarm_on': alarm_on
+            'alarm_on': alarm_on,
+            'servo_position': servo_pos
         })
 
 def update_leds(stage_name, mode):
@@ -399,17 +436,16 @@ def update_leds(stage_name, mode):
         GPIO.output(AUTO_MODE_LED_PIN, GPIO.LOW)
         GPIO.output(MANUAL_MODE_LED_PIN, GPIO.HIGH)
 
-def update_lcd(temp, hum, stage, mode, fan_on, dehum_on):
+def update_lcd(temp, hum, stage, mode, fan_on, dehum_on, servo_pos):
     """Formats and writes the current status to the LCD screen."""
     lcd.home()
 
     # Line 1: Temperature and Mode
-    lcd.write_string(f"Temp: {temp:.1f}C")
-    lcd.write_string(f" Mode:{mode[:3]}")
+    lcd.write_string(f"Temp:{temp:.1f}C M:{mode[:3]}")
 
-    # Line 2: Humidity
+    # Line 2: Humidity and Servo Position
     lcd.crlf()
-    lcd.write_string(f"Humidity: {hum:.1f} %")
+    lcd.write_string(f"Hum:{hum:.1f}% Servo:{servo_pos}deg")
 
     # Line 3: Stage
     lcd.crlf()
@@ -454,6 +490,7 @@ def main():
     last_stage_press = 0
     last_fan_press = 0
     last_dehumidifier_press = 0
+    last_servo_press = 0
 
     # Initialize temperature state variables
     stage_start_temp = temperature
@@ -467,6 +504,7 @@ def main():
             stage_button_pressed = not GPIO.input(STAGE_BUTTON_PIN)
             fan_button_pressed = not GPIO.input(FAN_BUTTON_PIN)
             dehumidifier_button_pressed = not GPIO.input(DEHUMIDIFIER_BUTTON_PIN)
+            servo_button_pressed = not GPIO.input(SERVO_BUTTON_PIN)
 
             # Mode switching
             if mode_button_pressed and (time.time() - last_mode_press > 0.2):
@@ -484,6 +522,12 @@ def main():
                 if current_mode == "AUTO":
                     stage_start_temp = temperature if temperature is not None else setpoints["min_temp"]
                 print(f"Manually advanced to stage: {stage_keys[current_stage_index]}")
+
+            # Servo control
+            if servo_button_pressed and (time.time() - last_servo_press > 0.2):
+                last_servo_press = time.time()
+                control_servo()
+                print(f"Servo position set to {servo_position} degrees")
 
             # Sensor reading
             try:
@@ -542,14 +586,14 @@ def main():
                     control_buzzer(buzzer_on)
 
                     # Update LCD display
-                    update_lcd(temperature, humidity, stage_name, current_mode, fan_on, dehumidifier_on)
+                    update_lcd(temperature, humidity, stage_name, current_mode, fan_on, dehumidifier_on, servo_position)
 
                     # Console feedback
                     print(f"Stage: {stage_name}, Mode: {current_mode}, Temp: {temperature:.1f}°C, Hum: {humidity:.1f}%")
                     print(f"Dehumidifier: {'ON' if dehumidifier_on else 'OFF'}, Fan: {'ON' if fan_on else 'OFF'}")
 
                     # Log data
-                    log_data(time.time(), temperature, humidity, stage_name, current_mode, fan_on, dehumidifier_on, fan_on, dehumidifier_on, buzzer_on)
+                    log_data(time.time(), temperature, humidity, stage_name, current_mode, fan_on, dehumidifier_on, fan_on, dehumidifier_on, buzzer_on, servo_position)
 
             except RuntimeError as error:
                 print(error.args[0])
