@@ -12,16 +12,18 @@ try:
     import board
     import adafruit_dht
     from RPLCD.i2c import CharLCD
+    from gpiozero import Servo
 except (RuntimeError, ImportError):
     import mock_gpio as GPIO
     import mock_board as board
     import mock_adafruit_dht as adafruit_dht
     from mock_rplcd import CharLCD
+    from mock_gpiozero import Servo
 import time
 import threading
 import csv
 import os
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify, render_template
 from datetime import datetime
 
 # =============================
@@ -60,6 +62,7 @@ def get_status():
         "fan_on_2": fan_on,
         "dehumidifier_on_2": dehumidifier_on,
         "buzzer_on": buzzer_on,
+        "servo_position": servo_position,
         "remaining_seconds": remaining_seconds,
         "uptime": uptime,
         "current_time": current_time
@@ -95,118 +98,16 @@ def toggle_dehumidifier():
     dehumidifier_on = not dehumidifier_on
     return jsonify({"dehumidifier_on": dehumidifier_on})
 
+@app.route('/api/servo', methods=['POST'])
+def api_servo():
+    """Controls the servo motor."""
+    control_servo()
+    return jsonify({"servo_position": servo_position})
+
 @app.route('/')
 def index():
     """Serves the main HTML page."""
-    return render_template_string(
-        """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Tobacco Curing Control</title>
-            <style>
-                body { font-family: sans-serif; }
-                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                .header { display: flex; justify-content: space-between; margin-bottom: 20px; }
-                .status { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-                .status-item { padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
-                .controls { margin-top: 20px; }
-                .controls button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <div><strong>Uptime:</strong> <span id="uptime"></span></div>
-                    <div><strong>Time:</strong> <span id="current_time"></span></div>
-                </div>
-                <h1>Tobacco Curing Control</h1>
-                <div class="status">
-                    <div class="status-item"><strong>Mode:</strong> <span id="mode"></span></div>
-                    <div class="status-item"><strong>Stage:</strong> <span id="stage"></span></div>
-                    <div class="status-item"><strong>Temperature:</strong> <span id="temperature"></span> &deg;C</div>
-                    <div class="status-item"><strong>Target Temp:</strong> <span id="target_temp"></span> &deg;C</div>
-                    <div class="status-item"><strong>Max Temp:</strong> <span id="max_temp"></span> &deg;C</div>
-                    <div class="status-item"><strong>Next Temp Increase:</strong> <span id="next_temp_increase"></span></div>
-                    <div class="status-item"><strong>Humidity:</strong> <span id="humidity"></span> %</div>
-                    <div class="status-item"><strong>Fan 1:</strong> <span id="fan_on"></span></div>
-                    <div class="status-item"><strong>Dehumidifier 1:</strong> <span id="dehumidifier_on"></span></div>
-                    <div class="status-item"><strong>Fan 2:</strong> <span id="fan_on_2"></span></div>
-                    <div class="status-item"><strong>Dehumidifier 2:</strong> <span id="dehumidifier_on_2"></span></div>
-                    <div class="status-item"><strong>Buzzer:</strong> <span id="buzzer_on"></span></div>
-                </div>
-                <div class="controls">
-                    <button id="toggle-mode">Toggle Mode</button>
-                    <button id="next-stage">Next Stage</button>
-                    <button id="toggle-fan" disabled>Toggle Fan</button>
-                    <button id="toggle-dehumidifier" disabled>Toggle Dehumidifier</button>
-                </div>
-            </div>
-            <script>
-                function updateStatus() {
-                    fetch('/api/status')
-                        .then(response => response.json())
-                        .then(data => {
-                            document.getElementById('mode').textContent = data.mode;
-                            document.getElementById('stage').textContent = data.stage;
-                            document.getElementById('temperature').textContent = data.temperature.toFixed(1);
-                            document.getElementById('target_temp').textContent = data.target_temp.toFixed(1);
-                            document.getElementById('max_temp').textContent = data.max_temp.toFixed(1);
-                            document.getElementById('humidity').textContent = data.humidity.toFixed(1);
-                            document.getElementById('fan_on').textContent = data.fan_on ? 'ON' : 'OFF';
-                            document.getElementById('dehumidifier_on').textContent = data.dehumidifier_on ? 'ON' : 'OFF';
-                            document.getElementById('fan_on_2').textContent = data.fan_on_2 ? 'ON' : 'OFF';
-                            document.getElementById('dehumidifier_on_2').textContent = data.dehumidifier_on_2 ? 'ON' : 'OFF';
-                            document.getElementById('buzzer_on').textContent = data.buzzer_on ? 'ON' : 'OFF';
-
-                            const uptime_hours = Math.floor(data.uptime / 3600);
-                            const uptime_minutes = Math.floor((data.uptime % 3600) / 60);
-                            const uptime_seconds = Math.floor(data.uptime % 60);
-                            document.getElementById('uptime').textContent = `${uptime_hours.toString().padStart(2, '0')}:${uptime_minutes.toString().padStart(2, '0')}:${uptime_seconds.toString().padStart(2, '0')}`;
-                            document.getElementById('current_time').textContent = data.current_time;
-
-                            if (data.mode === 'AUTO') {
-                                const minutes = Math.floor(data.remaining_seconds / 60);
-                                const seconds = Math.floor(data.remaining_seconds % 60);
-                                document.getElementById('next_temp_increase').textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-                            } else {
-                                document.getElementById('next_temp_increase').textContent = 'N/A';
-                            }
-
-                            // Disable manual controls in AUTO mode
-                            const isAutoMode = data.mode === 'AUTO';
-                            document.getElementById('toggle-fan').disabled = isAutoMode;
-                            document.getElementById('toggle-dehumidifier').disabled = isAutoMode;
-                        });
-                }
-
-                document.getElementById('toggle-mode').addEventListener('click', () => {
-                    fetch('/api/mode', { method: 'POST' })
-                        .then(() => updateStatus());
-                });
-
-                document.getElementById('next-stage').addEventListener('click', () => {
-                    fetch('/api/stage', { method: 'POST' })
-                        .then(() => updateStatus());
-                });
-
-                document.getElementById('toggle-fan').addEventListener('click', () => {
-                    fetch('/api/fan', { method: 'POST' })
-                        .then(() => updateStatus());
-                });
-
-                document.getElementById('toggle-dehumidifier').addEventListener('click', () => {
-                    fetch('/api/dehumidifier', { method: 'POST' })
-                        .then(() => updateStatus());
-                });
-
-                setInterval(updateStatus, 2000);
-                updateStatus();
-            </script>
-        </body>
-        </html>
-        """
-    )
+    return render_template('index.html')
 
 lcd = CharLCD(i2c_expander='PCF8574', address=0x27, port=1,
 cols=20, rows=4, dotsize=8)
@@ -220,18 +121,20 @@ DEHUMIDIFIER_PIN = 27
 FAN_PIN_2 = 22
 DEHUMIDIFIER_PIN_2 = 23
 BUZZER_PIN = 24
+SERVO_PIN = 18
 
 # Button definitions
 MODE_BUTTON_PIN = 5
 STAGE_BUTTON_PIN = 6
 FAN_BUTTON_PIN = 13
 DEHUMIDIFIER_BUTTON_PIN = 19
+SERVO_BUTTON_PIN = 26
 
 # LED Indicator definitions
 YELLOWING_LED_PIN = 16
 LEAF_DRYING_LED_PIN = 20
 MIDRIB_DRYING_LED_PIN = 21
-ORDERING_LED_PIN = 26
+ORDERING_LED_PIN = 7
 
 AUTO_MODE_LED_PIN = 12
 MANUAL_MODE_LED_PIN = 25
@@ -266,6 +169,23 @@ dehumidifier_on = False
 buzzer_on = False
 temperature = 0.0
 humidity = 0.0
+servo_position = 0
+
+# Servo setup
+servo = Servo(SERVO_PIN)
+
+def control_servo():
+    """Controls the servo motor."""
+    global servo_position
+    if servo_position == 0:
+        servo.value = -0.5 # 45 degrees
+        servo_position = 45
+    elif servo_position == 45:
+        servo.value = 0 # 90 degrees
+        servo_position = 90
+    else:
+        servo.value = -1 # 0 degrees
+        servo_position = 0
 
 # =============================
 # GPIO Setup
@@ -282,6 +202,7 @@ def setup_gpio():
     GPIO.setup(STAGE_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
     GPIO.setup(FAN_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
     GPIO.setup(DEHUMIDIFIER_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(SERVO_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
     # Output pins for LEDs
     GPIO.setup(YELLOWING_LED_PIN, GPIO.OUT)
@@ -349,12 +270,12 @@ def update_relays(dehumidifier_on, fan_on):
 # =============================
 # LCD Update Function
 # =============================
-def log_data(timestamp, temp, hum, stage, mode, fan_on, dehum_on, fan_on_2, dehum_on_2, alarm_on):
+def log_data(timestamp, temp, hum, stage, mode, fan_on, dehum_on, fan_on_2, dehum_on_2, alarm_on, servo_pos):
     """Logs the current state to a CSV file."""
     log_file = 'curing_log.csv'
     file_exists = os.path.isfile(log_file)
     with open(log_file, 'a', newline='') as csvfile:
-        fieldnames = ['timestamp', 'temperature', 'humidity', 'stage', 'mode', 'fan_on', 'dehumidifier_on', 'fan_on_2', 'dehumidifier_on_2', 'alarm_on']
+        fieldnames = ['timestamp', 'temperature', 'humidity', 'stage', 'mode', 'fan_on', 'dehumidifier_on', 'fan_on_2', 'dehumidifier_on_2', 'alarm_on', 'servo_position']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
         if not file_exists:
@@ -370,7 +291,8 @@ def log_data(timestamp, temp, hum, stage, mode, fan_on, dehum_on, fan_on_2, dehu
             'dehumidifier_on': dehum_on,
             'fan_on_2': fan_on_2,
             'dehumidifier_on_2': dehum_on_2,
-            'alarm_on': alarm_on
+            'alarm_on': alarm_on,
+            'servo_position': servo_pos
         })
 
 def update_leds(stage_name, mode):
@@ -399,17 +321,16 @@ def update_leds(stage_name, mode):
         GPIO.output(AUTO_MODE_LED_PIN, GPIO.LOW)
         GPIO.output(MANUAL_MODE_LED_PIN, GPIO.HIGH)
 
-def update_lcd(temp, hum, stage, mode, fan_on, dehum_on):
+def update_lcd(temp, hum, stage, mode, fan_on, dehum_on, servo_pos):
     """Formats and writes the current status to the LCD screen."""
     lcd.home()
 
     # Line 1: Temperature and Mode
-    lcd.write_string(f"Temp: {temp:.1f}C")
-    lcd.write_string(f" Mode:{mode[:3]}")
+    lcd.write_string(f"Temp:{temp:.1f}C M:{mode[:3]}")
 
-    # Line 2: Humidity
+    # Line 2: Humidity and Servo Position
     lcd.crlf()
-    lcd.write_string(f"Humidity: {hum:.1f} %")
+    lcd.write_string(f"Hum:{hum:.1f}% Servo:{servo_pos}deg")
 
     # Line 3: Stage
     lcd.crlf()
@@ -454,6 +375,7 @@ def main():
     last_stage_press = 0
     last_fan_press = 0
     last_dehumidifier_press = 0
+    last_servo_press = 0
 
     # Initialize temperature state variables
     stage_start_temp = temperature
@@ -467,6 +389,7 @@ def main():
             stage_button_pressed = not GPIO.input(STAGE_BUTTON_PIN)
             fan_button_pressed = not GPIO.input(FAN_BUTTON_PIN)
             dehumidifier_button_pressed = not GPIO.input(DEHUMIDIFIER_BUTTON_PIN)
+            servo_button_pressed = not GPIO.input(SERVO_BUTTON_PIN)
 
             # Mode switching
             if mode_button_pressed and (time.time() - last_mode_press > 0.2):
@@ -484,6 +407,12 @@ def main():
                 if current_mode == "AUTO":
                     stage_start_temp = temperature if temperature is not None else setpoints["min_temp"]
                 print(f"Manually advanced to stage: {stage_keys[current_stage_index]}")
+
+            # Servo control
+            if servo_button_pressed and (time.time() - last_servo_press > 0.2):
+                last_servo_press = time.time()
+                control_servo()
+                print(f"Servo position set to {servo_position} degrees")
 
             # Sensor reading
             try:
@@ -542,14 +471,14 @@ def main():
                     control_buzzer(buzzer_on)
 
                     # Update LCD display
-                    update_lcd(temperature, humidity, stage_name, current_mode, fan_on, dehumidifier_on)
+                    update_lcd(temperature, humidity, stage_name, current_mode, fan_on, dehumidifier_on, servo_position)
 
                     # Console feedback
                     print(f"Stage: {stage_name}, Mode: {current_mode}, Temp: {temperature:.1f}°C, Hum: {humidity:.1f}%")
                     print(f"Dehumidifier: {'ON' if dehumidifier_on else 'OFF'}, Fan: {'ON' if fan_on else 'OFF'}")
 
                     # Log data
-                    log_data(time.time(), temperature, humidity, stage_name, current_mode, fan_on, dehumidifier_on, fan_on, dehumidifier_on, buzzer_on)
+                    log_data(time.time(), temperature, humidity, stage_name, current_mode, fan_on, dehumidifier_on, fan_on, dehumidifier_on, buzzer_on, servo_position)
 
             except RuntimeError as error:
                 print(error.args[0])

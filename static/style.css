@@ -1,0 +1,7 @@
+body { font-family: sans-serif; }
+.container { max-width: 600px; margin: 0 auto; padding: 20px; }
+.header { display: flex; justify-content: space-between; margin-bottom: 20px; }
+.status { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.status-item { padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
+.controls { margin-top: 20px; }
+.controls button { padding: 10px 20px; font-size: 16px; cursor: pointer; }

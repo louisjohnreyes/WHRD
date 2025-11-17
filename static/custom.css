@@ -1,0 +1,29 @@
+body {
+    background: linear-gradient(to right, #ece9e6, #ffffff);
+}
+
+.card {
+    box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
+    transition: 0.3s;
+}
+
+.card:hover {
+    box-shadow: 0 8px 16px 0 rgba(0,0,0,0.2);
+}
+
+.btn {
+    transition: all 0.3s ease-in-out;
+}
+
+.actuator-status {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background-color: #dc3545; /* Red for OFF */
+    transition: background-color 0.3s ease-in-out;
+}
+
+.actuator-status.on {
+    background-color: #28a745; /* Green for ON */
+}
