@@ -12,16 +12,18 @@ try:
     import board
     import adafruit_dht
     from RPLCD.i2c import CharLCD
+    from gpiozero import Servo
 except (RuntimeError, ImportError):
     import mock_gpio as GPIO
     import mock_board as board
     import mock_adafruit_dht as adafruit_dht
     from mock_rplcd import CharLCD
+    from mock_gpiozero import Servo
 import time
 import threading
 import csv
 import os
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify, render_template_string, request
 from datetime import datetime
 
 # =============================
@@ -62,7 +64,8 @@ def get_status():
         "buzzer_on": buzzer_on,
         "remaining_seconds": remaining_seconds,
         "uptime": uptime,
-        "current_time": current_time
+        "current_time": current_time,
+        "servo_position": servo_position
     }
     return jsonify(status)
 
@@ -94,6 +97,23 @@ def toggle_dehumidifier():
     global dehumidifier_on
     dehumidifier_on = not dehumidifier_on
     return jsonify({"dehumidifier_on": dehumidifier_on})
+
+@app.route('/api/servo', methods=['POST'])
+def set_servo():
+    """Sets the servo position."""
+    global servo_position
+    data = request.get_json()
+    position = data.get('position')
+    if position == 0:
+        servo_position = 0
+        servo.value = -1
+    elif position == 45:
+        servo_position = 45
+        servo.value = -0.5
+    elif position == 90:
+        servo_position = 90
+        servo.value = 0
+    return jsonify({"servo_position": servo_position})
 
 @app.route('/')
 def index():
@@ -134,12 +154,16 @@ def index():
                     <div class="status-item"><strong>Fan 2:</strong> <span id="fan_on_2"></span></div>
                     <div class="status-item"><strong>Dehumidifier 2:</strong> <span id="dehumidifier_on_2"></span></div>
                     <div class="status-item"><strong>Buzzer:</strong> <span id="buzzer_on"></span></div>
+                    <div class="status-item"><strong>Servo:</strong> <span id="servo_position"></span>&deg;</div>
                 </div>
                 <div class="controls">
                     <button id="toggle-mode">Toggle Mode</button>
                     <button id="next-stage">Next Stage</button>
                     <button id="toggle-fan" disabled>Toggle Fan</button>
                     <button id="toggle-dehumidifier" disabled>Toggle Dehumidifier</button>
+                    <button id="servo-0">0&deg;</button>
+                    <button id="servo-45">45&deg;</button>
+                    <button id="servo-90">90&deg;</button>
                 </div>
             </div>
             <script>
@@ -158,6 +182,7 @@ def index():
                             document.getElementById('fan_on_2').textContent = data.fan_on_2 ? 'ON' : 'OFF';
                             document.getElementById('dehumidifier_on_2').textContent = data.dehumidifier_on_2 ? 'ON' : 'OFF';
                             document.getElementById('buzzer_on').textContent = data.buzzer_on ? 'ON' : 'OFF';
+                            document.getElementById('servo_position').textContent = data.servo_position;
 
                             const uptime_hours = Math.floor(data.uptime / 3600);
                             const uptime_minutes = Math.floor((data.uptime % 3600) / 60);
@@ -200,6 +225,30 @@ def index():
                         .then(() => updateStatus());
                 });
 
+                document.getElementById('servo-0').addEventListener('click', () => {
+                    fetch('/api/servo', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ position: 0 })
+                    }).then(() => updateStatus());
+                });
+
+                document.getElementById('servo-45').addEventListener('click', () => {
+                    fetch('/api/servo', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ position: 45 })
+                    }).then(() => updateStatus());
+                });
+
+                document.getElementById('servo-90').addEventListener('click', () => {
+                    fetch('/api/servo', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ position: 90 })
+                    }).then(() => updateStatus());
+                });
+
                 setInterval(updateStatus, 2000);
                 updateStatus();
             </script>
@@ -226,6 +275,10 @@ MODE_BUTTON_PIN = 5
 STAGE_BUTTON_PIN = 6
 FAN_BUTTON_PIN = 13
 DEHUMIDIFIER_BUTTON_PIN = 19
+SERVO_BUTTON_PIN = 26
+
+# Servo motor definitions
+SERVO_PIN = 18
 
 # LED Indicator definitions
 YELLOWING_LED_PIN = 16
@@ -266,6 +319,7 @@ dehumidifier_on = False
 buzzer_on = False
 temperature = 0.0
 humidity = 0.0
+servo_position = 0
 
 # =============================
 # GPIO Setup
@@ -282,6 +336,7 @@ def setup_gpio():
     GPIO.setup(STAGE_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
     GPIO.setup(FAN_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
     GPIO.setup(DEHUMIDIFIER_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(SERVO_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
     # Output pins for LEDs
     GPIO.setup(YELLOWING_LED_PIN, GPIO.OUT)
@@ -454,6 +509,8 @@ def main():
     last_stage_press = 0
     last_fan_press = 0
     last_dehumidifier_press = 0
+    last_servo_press = 0
+    servo = Servo(SERVO_PIN)
 
     # Initialize temperature state variables
     stage_start_temp = temperature
@@ -467,6 +524,7 @@ def main():
             stage_button_pressed = not GPIO.input(STAGE_BUTTON_PIN)
             fan_button_pressed = not GPIO.input(FAN_BUTTON_PIN)
             dehumidifier_button_pressed = not GPIO.input(DEHUMIDIFIER_BUTTON_PIN)
+            servo_button_pressed = not GPIO.input(SERVO_BUTTON_PIN)
 
             # Mode switching
             if mode_button_pressed and (time.time() - last_mode_press > 0.2):
@@ -484,6 +542,20 @@ def main():
                 if current_mode == "AUTO":
                     stage_start_temp = temperature if temperature is not None else setpoints["min_temp"]
                 print(f"Manually advanced to stage: {stage_keys[current_stage_index]}")
+
+            # Servo control
+            if servo_button_pressed and (time.time() - last_servo_press > 0.2):
+                last_servo_press = time.time()
+                if servo_position == 0:
+                    servo_position = 45
+                    servo.value = -0.5
+                elif servo_position == 45:
+                    servo_position = 90
+                    servo.value = 0
+                else:
+                    servo_position = 0
+                    servo.value = -1
+                print(f"Servo position set to {servo_position} degrees")
 
             # Sensor reading
             try:
@@ -557,6 +629,7 @@ def main():
             time.sleep(0.5)
     finally:
         lcd.clear()
+        servo.detach()
         GPIO.cleanup()
 
 # =============================
