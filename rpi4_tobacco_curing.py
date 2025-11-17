@@ -12,6 +12,7 @@ try:
     import board
     import adafruit_dht
     from RPLCD.i2c import CharLCD
+    from gpiozero import Servo
 except (RuntimeError, ImportError):
     import mock_gpio as GPIO
     import mock_board as board
