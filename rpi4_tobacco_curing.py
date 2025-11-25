@@ -208,8 +208,22 @@ def index():
         """
     )
 
-lcd = CharLCD(i2c_expander='PCF8574', address=0x27, port=1,
-cols=20, rows=4, dotsize=8)
+def initialize_lcd():
+    """Tries to initialize the LCD at common I2C addresses."""
+    lcd = None
+    addresses = [0x27, 0x3F]  # Common I2C addresses for PCF8574
+    for address in addresses:
+        try:
+            lcd = CharLCD(i2c_expander='PCF8574', address=address, port=1,
+                          cols=20, rows=4, dotsize=8)
+            lcd.clear()
+            lcd.write_string("Tobacco Curing Sys\r\nInitializing...")
+            print(f"LCD initialized at address {hex(address)}")
+            return lcd
+        except Exception as e:
+            print(f"Failed to initialize LCD at {hex(address)}: {e}")
+    print("Could not initialize LCD. Check connection and address.")
+    return None
 
 # =============================
 # Pin definitions (BCM numbering)
@@ -399,8 +413,10 @@ def update_leds(stage_name, mode):
         GPIO.output(AUTO_MODE_LED_PIN, GPIO.LOW)
         GPIO.output(MANUAL_MODE_LED_PIN, GPIO.HIGH)
 
-def update_lcd(temp, hum, stage, mode, fan_on, dehum_on):
+def update_lcd(lcd, temp, hum, stage, mode, fan_on, dehum_on):
     """Formats and writes the current status to the LCD screen."""
+    if not lcd:
+        return
     lcd.home()
 
     # Line 1: Temperature and Mode
@@ -429,6 +445,12 @@ def update_lcd(temp, hum, stage, mode, fan_on, dehum_on):
 def main():
     """Main loop for the tobacco curing controller."""
     global current_mode, current_stage_index, stage_start_time, fan_on, dehumidifier_on, buzzer_on, temperature, humidity, stage_start_temp, auto_target_temp
+
+    lcd = initialize_lcd()
+    if not lcd:
+        # If LCD fails to initialize, we can't proceed with display-dependent logic
+        print("CRITICAL: LCD initialization failed. Exiting.")
+        return  # Or handle this case in a way that doesn't rely on the LCD
 
     setup_gpio()
     dht_device = adafruit_dht.DHT22(DHT_PIN)
@@ -460,7 +482,8 @@ def main():
     auto_target_temp = stage_start_temp + 1.0
 
     try:
-        lcd.clear()
+        if lcd:
+            lcd.clear()
         while True:
             # Button reading
             mode_button_pressed = not GPIO.input(MODE_BUTTON_PIN)
@@ -542,7 +565,7 @@ def main():
                     control_buzzer(buzzer_on)
 
                     # Update LCD display
-                    update_lcd(temperature, humidity, stage_name, current_mode, fan_on, dehumidifier_on)
+                    update_lcd(lcd, temperature, humidity, stage_name, current_mode, fan_on, dehumidifier_on)
 
                     # Console feedback
                     print(f"Stage: {stage_name}, Mode: {current_mode}, Temp: {temperature:.1f}°C, Hum: {humidity:.1f}%")
@@ -556,7 +579,8 @@ def main():
 
             time.sleep(0.5)
     finally:
-        lcd.clear()
+        if lcd:
+            lcd.clear()
         GPIO.cleanup()
 
 # =============================
