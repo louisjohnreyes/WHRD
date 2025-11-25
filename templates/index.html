@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tobacco Curing Control</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Tobacco Curing Control</h1>
+            <div class="header-info">
+                <div><strong>Uptime:</strong> <span id="uptime">--:--:--</span></div>
+                <div><strong>Time:</strong> <span id="current_time">--:--:--</span></div>
+            </div>
+        </div>
+
+        <div id="loading" class="loader-container">
+            <div class="loader"></div>
+            <p>Initializing System...</p>
+        </div>
+
+        <div id="main-content" class="hidden">
+            <div class="status">
+                <div class="status-item"><strong>Mode</strong><span id="mode">--</span></div>
+                <div class="status-item"><strong>Stage</strong><span id="stage">--</span></div>
+                <div class="status-item"><strong>Temperature</strong><span id="temperature">--</span> &deg;C</div>
+                <div class="status-item"><strong>Target Temp</strong><span id="target_temp">--</span> &deg;C</div>
+                <div class="status-item"><strong>Max Temp</strong><span id="max_temp">--</span> &deg;C</div>
+                <div class="status-item"><strong>Next Increase</strong><span id="next_temp_increase">--</span></div>
+                <div class="status-item"><strong>Humidity</strong><span id="humidity">--</span> %</div>
+                <div class="status-item"><strong>Fan 1</strong><span id="fan_on">--</span></div>
+                <div class="status-item"><strong>Dehumidifier 1</strong><span id="dehumidifier_on">--</span></div>
+                <div class="status-item"><strong>Fan 2</strong><span id="fan_on_2">--</span></div>
+                <div class="status-item"><strong>Dehumidifier 2</strong><span id="dehumidifier_on_2">--</span></div>
+                <div class="status-item"><strong>Buzzer</strong><span id="buzzer_on">--</span></div>
+            </div>
+            <div class="controls">
+                <button id="toggle-mode">Toggle Mode</button>
+                <button id="next-stage">Next Stage</button>
+                <button id="toggle-fan" disabled>Toggle Fan</button>
+                <button id="toggle-dehumidifier" disabled>Toggle Dehumidifier</button>
+            </div>
+        </div>
+    </div>
+    <script src="/static/script.js"></script>
+</body>
+</html>
