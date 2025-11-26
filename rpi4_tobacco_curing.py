@@ -208,8 +208,26 @@ def index():
         """
     )
 
-lcd = CharLCD(i2c_expander='PCF8574', address=0x27, port=1,
-cols=20, rows=4, dotsize=8)
+# Global variable for the LCD object
+lcd = None
+
+def initialize_lcd():
+    """Initializes the LCD by probing common I2C addresses."""
+    # This function is called from within the main try block
+    # so we can assume RPi-specific libraries are available.
+    lcd_addresses = [0x27, 0x3F]
+    for address in lcd_addresses:
+        try:
+            # Note: auto_linebreaks=False is important for manual layout
+            lcd_instance = CharLCD(i2c_expander='PCF8574', address=address, port=1,
+                                   cols=20, rows=4, dotsize=8, auto_linebreaks=False)
+            lcd_instance.clear()
+            print(f"LCD initialized successfully at address {hex(address)}")
+            return lcd_instance
+        except Exception as e:
+            print(f"Failed to initialize LCD at address {hex(address)}: {e}")
+    print("Could not initialize LCD. Continuing without display.")
+    return None
 
 # =============================
 # Pin definitions (BCM numbering)
@@ -241,7 +259,7 @@ MANUAL_MODE_LED_PIN = 25
 # =============================
 # Set this to True if your relays are active LOW (most common)
 # Set to False if active HIGH
-RELAY_ACTIVE_LOW = False
+RELAY_ACTIVE_LOW = True
 
 # =============================
 # Curing stages configuration
@@ -401,36 +419,38 @@ def update_leds(stage_name, mode):
 
 def update_lcd(temp, hum, stage, mode, fan_on, dehum_on):
     """Formats and writes the current status to the LCD screen."""
-    lcd.home()
+    if lcd:
+        lcd.home()
 
-    # Line 1: Temperature and Mode
-    lcd.write_string(f"Temp: {temp:.1f}C")
-    lcd.write_string(f" Mode:{mode[:3]}")
+        # Line 1: Temperature and Mode
+        lcd.write_string(f"Temp: {temp:.1f}C")
+        lcd.write_string(f" Mode:{mode[:3]}")
 
-    # Line 2: Humidity
-    lcd.crlf()
-    lcd.write_string(f"Humidity: {hum:.1f} %")
+        # Line 2: Humidity
+        lcd.crlf()
+        lcd.write_string(f"Humidity: {hum:.1f} %")
 
-    # Line 3: Stage
-    lcd.crlf()
-    lcd.write_string(f"Stage: {stage}")
+        # Line 3: Stage
+        lcd.crlf()
+        lcd.write_string(f"Stage: {stage}")
 
-    # Line 4: Actuator Status
-    lcd.crlf()
-    fan_str = "F1" if fan_on else "- "
-    dehum_str = "D1" if dehum_on else "- "
-    fan_str_2 = "F2" if fan_on else "- "
-    dehum_str_2 = "D2" if dehum_on else "- "
-    lcd.write_string(f"Status: {fan_str}{dehum_str}{fan_str_2}{dehum_str_2}")
+        # Line 4: Actuator Status
+        lcd.crlf()
+        fan_str = "F1" if fan_on else "- "
+        dehum_str = "D1" if dehum_on else "- "
+        fan_str_2 = "F2" if fan_on else "- "
+        dehum_str_2 = "D2" if dehum_on else "- "
+        lcd.write_string(f"Status: {fan_str}{dehum_str}{fan_str_2}{dehum_str_2}")
 
 # =============================
 # Main Control Loop
 # =============================
 def main():
     """Main loop for the tobacco curing controller."""
-    global current_mode, current_stage_index, stage_start_time, fan_on, dehumidifier_on, buzzer_on, temperature, humidity, stage_start_temp, auto_target_temp
+    global current_mode, current_stage_index, stage_start_time, fan_on, dehumidifier_on, buzzer_on, temperature, humidity, stage_start_temp, auto_target_temp, lcd
 
     setup_gpio()
+    lcd = initialize_lcd()  # Initialize the LCD
     dht_device = adafruit_dht.DHT22(DHT_PIN)
 
     # Perform an initial sensor reading to ensure we start with valid data
@@ -460,7 +480,8 @@ def main():
     auto_target_temp = stage_start_temp + 1.0
 
     try:
-        lcd.clear()
+        if lcd:
+            lcd.clear()
         while True:
             # Button reading
             mode_button_pressed = not GPIO.input(MODE_BUTTON_PIN)
@@ -556,7 +577,8 @@ def main():
 
             time.sleep(0.5)
     finally:
-        lcd.clear()
+        if lcd:
+            lcd.clear()
         GPIO.cleanup()
 
 # =============================
