@@ -7,16 +7,10 @@
 # pip3 install adafruit-circuitpython-dht
 # pip3 install RPLCD
 
-try:
-    import RPi.GPIO as GPIO
-    import board
-    import adafruit_dht
-    from RPLCD.i2c import CharLCD
-except (RuntimeError, ImportError):
-    import mock_gpio as GPIO
-    import mock_board as board
-    import mock_adafruit_dht as adafruit_dht
-    from mock_rplcd import CharLCD
+import RPi.GPIO as GPIO
+import board
+import adafruit_dht
+from RPLCD.i2c import CharLCD
 import time
 import threading
 import csv
@@ -208,8 +202,21 @@ def index():
         """
     )
 
-lcd = CharLCD(i2c_expander='PCF8574', address=0x27, port=1,
-cols=20, rows=4, dotsize=8)
+def initialize_lcd():
+    """Initializes the LCD by probing common I2C addresses."""
+    for address in [0x27, 0x3F]:
+        try:
+            lcd = CharLCD(i2c_expander='PCF8574', address=address, port=1,
+                          cols=20, rows=4, dotsize=8)
+            lcd.clear()
+            print(f"LCD found at address 0x{address:02X}")
+            return lcd
+        except Exception as e:
+            print(f"Error initializing LCD at address 0x{address:02X}: {e}")
+    print("LCD not found. Continuing without display.")
+    return None
+
+lcd = initialize_lcd()
 
 # =============================
 # Pin definitions (BCM numbering)
@@ -241,7 +248,7 @@ MANUAL_MODE_LED_PIN = 25
 # =============================
 # Set this to True if your relays are active LOW (most common)
 # Set to False if active HIGH
-RELAY_ACTIVE_LOW = False
+RELAY_ACTIVE_LOW = True
 
 # =============================
 # Curing stages configuration
@@ -401,27 +408,28 @@ def update_leds(stage_name, mode):
 
 def update_lcd(temp, hum, stage, mode, fan_on, dehum_on):
     """Formats and writes the current status to the LCD screen."""
-    lcd.home()
+    if lcd:
+        lcd.home()
 
-    # Line 1: Temperature and Mode
-    lcd.write_string(f"Temp: {temp:.1f}C")
-    lcd.write_string(f" Mode:{mode[:3]}")
+        # Line 1: Temperature and Mode
+        lcd.write_string(f"Temp: {temp:.1f}C")
+        lcd.write_string(f" Mode:{mode[:3]}")
 
-    # Line 2: Humidity
-    lcd.crlf()
-    lcd.write_string(f"Humidity: {hum:.1f} %")
+        # Line 2: Humidity
+        lcd.crlf()
+        lcd.write_string(f"Humidity: {hum:.1f} %")
 
-    # Line 3: Stage
-    lcd.crlf()
-    lcd.write_string(f"Stage: {stage}")
+        # Line 3: Stage
+        lcd.crlf()
+        lcd.write_string(f"Stage: {stage}")
 
-    # Line 4: Actuator Status
-    lcd.crlf()
-    fan_str = "F1" if fan_on else "- "
-    dehum_str = "D1" if dehum_on else "- "
-    fan_str_2 = "F2" if fan_on else "- "
-    dehum_str_2 = "D2" if dehum_on else "- "
-    lcd.write_string(f"Status: {fan_str}{dehum_str}{fan_str_2}{dehum_str_2}")
+        # Line 4: Actuator Status
+        lcd.crlf()
+        fan_str = "F1" if fan_on else "- "
+        dehum_str = "D1" if dehum_on else "- "
+        fan_str_2 = "F2" if fan_on else "- "
+        dehum_str_2 = "D2" if dehum_on else "- "
+        lcd.write_string(f"Status: {fan_str}{dehum_str}{fan_str_2}{dehum_str_2}")
 
 # =============================
 # Main Control Loop
@@ -460,7 +468,8 @@ def main():
     auto_target_temp = stage_start_temp + 1.0
 
     try:
-        lcd.clear()
+        if lcd:
+            lcd.clear()
         while True:
             # Button reading
             mode_button_pressed = not GPIO.input(MODE_BUTTON_PIN)
@@ -556,7 +565,8 @@ def main():
 
             time.sleep(0.5)
     finally:
-        lcd.clear()
+        if lcd:
+            lcd.clear()
         GPIO.cleanup()
 
 # =============================
