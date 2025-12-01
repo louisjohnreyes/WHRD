@@ -4,4 +4,3 @@ RPLCD
 Flask
 smbus
 smbus2
-mock_gpio
