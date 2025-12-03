@@ -13,6 +13,7 @@ function updateStatus() {
             document.getElementById('fan_on_2').textContent = data.fan_on_2 ? 'ON' : 'OFF';
             document.getElementById('dehumidifier_on_2').textContent = data.dehumidifier_on_2 ? 'ON' : 'OFF';
             document.getElementById('buzzer_on').textContent = data.buzzer_on ? 'ON' : 'OFF';
+            document.getElementById('servo_position').textContent = data.servo_position;
 
             const uptime_hours = Math.floor(data.uptime / 3600);
             const uptime_minutes = Math.floor((data.uptime % 3600) / 60);
@@ -52,6 +53,11 @@ document.getElementById('toggle-fan').addEventListener('click', () => {
 
 document.getElementById('toggle-dehumidifier').addEventListener('click', () => {
     fetch('/api/dehumidifier', { method: 'POST' })
+        .then(() => updateStatus());
+});
+
+document.getElementById('toggle-servo').addEventListener('click', () => {
+    fetch('/api/servo', { method: 'POST' })
         .then(() => updateStatus());
 });
 

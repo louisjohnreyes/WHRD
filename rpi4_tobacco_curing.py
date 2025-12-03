@@ -6,17 +6,20 @@
 # pip3 install RPi.GPIO
 # pip3 install adafruit-circuitpython-dht
 # pip3 install RPLCD
+# pip3 install gpiozero
 
 try:
     import RPi.GPIO as GPIO
     import board
     import adafruit_dht
     from RPLCD.i2c import CharLCD
+    from gpiozero import Servo
 except (RuntimeError, ImportError):
     import mock_gpio as GPIO
     import mock_board as board
     import mock_adafruit_dht as adafruit_dht
     from mock_rplcd import CharLCD
+    from mock_gpiozero import Servo
 import time
 import threading
 import csv
@@ -61,6 +64,7 @@ def get_status():
         "fan_on_2": fan_on,
         "dehumidifier_on_2": dehumidifier_on,
         "buzzer_on": buzzer_on,
+        "servo_position": servo_position,
         "remaining_seconds": remaining_seconds,
         "uptime": uptime,
         "current_time": current_time
@@ -96,6 +100,20 @@ def toggle_dehumidifier():
     dehumidifier_on = not dehumidifier_on
     return jsonify({"dehumidifier_on": dehumidifier_on})
 
+@app.route('/api/servo', methods=['POST'])
+def toggle_servo():
+    """Toggles the servo position."""
+    global servo_position
+    if servo_position == 0:
+        servo_position = 45
+    elif servo_position == 45:
+        servo_position = 90
+    else:
+        servo_position = 0
+    set_servo_angle(servo_position)
+    return jsonify({"servo_position": servo_position})
+
+
 @app.route('/')
 def index():
     """Serves the main HTML page."""
@@ -113,12 +131,14 @@ DEHUMIDIFIER_PIN = 27
 FAN_PIN_2 = 22
 DEHUMIDIFIER_PIN_2 = 23
 BUZZER_PIN = 24
+SERVO_PIN = 8
 
 # Button definitions
 MODE_BUTTON_PIN = 5
 STAGE_BUTTON_PIN = 6
 FAN_BUTTON_PIN = 13
 DEHUMIDIFIER_BUTTON_PIN = 19
+SERVO_BUTTON_PIN = 7
 
 # LED Indicator definitions
 YELLOWING_LED_PIN = 16
@@ -158,13 +178,14 @@ def save_state():
         "current_stage_index": current_stage_index,
         "auto_target_temp": auto_target_temp,
         "stage_start_time": stage_start_time,
+        "servo_position": servo_position,
     }
     with open(STATE_FILE, "w") as f:
         json.dump(state, f)
 
 def load_state():
     """Loads the state from a file."""
-    global current_mode, current_stage_index, auto_target_temp, stage_start_time
+    global current_mode, current_stage_index, auto_target_temp, stage_start_time, servo_position
     try:
         with open(STATE_FILE, "r") as f:
             state = json.load(f)
@@ -172,6 +193,7 @@ def load_state():
             current_stage_index = state.get("current_stage_index", 0)
             auto_target_temp = state.get("auto_target_temp", 0.0)
             stage_start_time = state.get("stage_start_time", time.time())
+            servo_position = state.get("servo_position", 0)
     except FileNotFoundError:
         pass # No state file yet, start with defaults
 
@@ -188,12 +210,15 @@ dehumidifier_on = False
 buzzer_on = False
 temperature = 0.0
 humidity = 0.0
+servo_position = 0
 
 # =============================
 # GPIO Setup
 # =============================
+servo = None
 def setup_gpio():
     """Sets up the GPIO pins."""
+    global servo
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(FAN_PIN, GPIO.OUT)
     GPIO.setup(DEHUMIDIFIER_PIN, GPIO.OUT)
@@ -204,6 +229,7 @@ def setup_gpio():
     GPIO.setup(STAGE_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
     GPIO.setup(FAN_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
     GPIO.setup(DEHUMIDIFIER_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(SERVO_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
     # Output pins for LEDs
     GPIO.setup(YELLOWING_LED_PIN, GPIO.OUT)
@@ -228,8 +254,13 @@ def setup_gpio():
     GPIO.output(AUTO_MODE_LED_PIN, GPIO.LOW)
     GPIO.output(MANUAL_MODE_LED_PIN, GPIO.LOW)
 
+    # Initialize servo
+    servo = Servo(SERVO_PIN)
+    set_servo_angle(servo_position)
+
+
 # =============================
-# Relay Control Functions
+# Relay and Servo Control Functions
 # =============================
 def relay_on(pin):
     """Turns ON the relay depending on the relay logic type."""
@@ -268,15 +299,24 @@ def update_relays(dehumidifier_on, fan_on):
         relay_off(FAN_PIN)
         relay_off(FAN_PIN_2)
 
+def set_servo_angle(angle):
+    """Sets the servo to a specific angle."""
+    if angle == 0:
+        servo.value = -1.0
+    elif angle == 45:
+        servo.value = -0.5
+    elif angle == 90:
+        servo.value = 0.0
+
 # =============================
 # LCD Update Function
 # =============================
-def log_data(timestamp, temp, hum, stage, mode, fan_on, dehum_on, fan_on_2, dehum_on_2, alarm_on):
+def log_data(timestamp, temp, hum, stage, mode, fan_on, dehum_on, fan_on_2, dehum_on_2, alarm_on, servo_pos):
     """Logs the current state to a CSV file."""
     log_file = 'curing_log.csv'
     file_exists = os.path.isfile(log_file)
     with open(log_file, 'a', newline='') as csvfile:
-        fieldnames = ['timestamp', 'temperature', 'humidity', 'stage', 'mode', 'fan_on', 'dehumidifier_on', 'fan_on_2', 'dehumidifier_on_2', 'alarm_on']
+        fieldnames = ['timestamp', 'temperature', 'humidity', 'stage', 'mode', 'fan_on', 'dehumidifier_on', 'fan_on_2', 'dehumidifier_on_2', 'alarm_on', 'servo_position']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
         if not file_exists:
@@ -292,7 +332,8 @@ def log_data(timestamp, temp, hum, stage, mode, fan_on, dehum_on, fan_on_2, dehu
             'dehumidifier_on': dehum_on,
             'fan_on_2': fan_on_2,
             'dehumidifier_on_2': dehum_on_2,
-            'alarm_on': alarm_on
+            'alarm_on': alarm_on,
+            'servo_position': servo_pos,
         })
 
 def update_leds(stage_name, mode):
@@ -321,7 +362,7 @@ def update_leds(stage_name, mode):
         GPIO.output(AUTO_MODE_LED_PIN, GPIO.LOW)
         GPIO.output(MANUAL_MODE_LED_PIN, GPIO.HIGH)
 
-def update_lcd(temp, hum, stage, mode, fan_on, dehum_on):
+def update_lcd(temp, hum, stage, mode, fan_on, dehum_on, servo_pos):
     """Formats and writes the current status to the LCD screen."""
     lcd.home()
 
@@ -329,9 +370,10 @@ def update_lcd(temp, hum, stage, mode, fan_on, dehum_on):
     lcd.write_string(f"Temp: {temp:.1f}C")
     lcd.write_string(f" Mode:{mode[:3]}")
 
-    # Line 2: Humidity
+    # Line 2: Humidity and Servo
     lcd.crlf()
-    lcd.write_string(f"Humidity: {hum:.1f} %")
+    lcd.write_string(f"Hum: {hum:.1f}%")
+    lcd.write_string(f" Servo:{servo_pos}deg")
 
     # Line 3: Stage
     lcd.crlf()
@@ -350,7 +392,7 @@ def update_lcd(temp, hum, stage, mode, fan_on, dehum_on):
 # =============================
 def main():
     """Main loop for the tobacco curing controller."""
-    global current_mode, current_stage_index, stage_start_time, fan_on, dehumidifier_on, buzzer_on, temperature, humidity, stage_start_temp, auto_target_temp
+    global current_mode, current_stage_index, stage_start_time, fan_on, dehumidifier_on, buzzer_on, temperature, humidity, stage_start_temp, auto_target_temp, servo_position
 
     setup_gpio()
 
@@ -397,8 +439,10 @@ def main():
     last_stage_press = 0
     last_fan_press = 0
     last_dehumidifier_press = 0
+    last_servo_press = 0
 
     load_state() # Load the last saved state
+    set_servo_angle(servo_position) # Restore servo position
 
     # Initialize temperature state variables
     stage_start_temp = temperature
@@ -414,6 +458,7 @@ def main():
             stage_button_pressed = not GPIO.input(STAGE_BUTTON_PIN)
             fan_button_pressed = not GPIO.input(FAN_BUTTON_PIN)
             dehumidifier_button_pressed = not GPIO.input(DEHUMIDIFIER_BUTTON_PIN)
+            servo_button_pressed = not GPIO.input(SERVO_BUTTON_PIN)
 
             # Mode switching
             if mode_button_pressed and (time.time() - last_mode_press > 0.2):
@@ -431,6 +476,18 @@ def main():
                 if current_mode == "AUTO":
                     stage_start_temp = temperature if temperature is not None else setpoints["min_temp"]
                 print(f"Manually advanced to stage: {stage_keys[current_stage_index]}")
+
+            # Servo control
+            if servo_button_pressed and (time.time() - last_servo_press > 0.2):
+                last_servo_press = time.time()
+                if servo_position == 0:
+                    servo_position = 45
+                elif servo_position == 45:
+                    servo_position = 90
+                else:
+                    servo_position = 0
+                set_servo_angle(servo_position)
+                print(f"Servo position set to {servo_position} degrees")
 
             # Sensor reading
             try:
@@ -489,14 +546,14 @@ def main():
                     control_buzzer(buzzer_on)
 
                     # Update LCD display
-                    update_lcd(temperature, humidity, stage_name, current_mode, fan_on, dehumidifier_on)
+                    update_lcd(temperature, humidity, stage_name, current_mode, fan_on, dehumidifier_on, servo_position)
 
                     # Console feedback
                     print(f"Stage: {stage_name}, Mode: {current_mode}, Temp: {temperature:.1f}°C, Hum: {humidity:.1f}%")
-                    print(f"Dehumidifier: {'ON' if dehumidifier_on else 'OFF'}, Fan: {'ON' if fan_on else 'OFF'}")
+                    print(f"Dehumidifier: {'ON' if dehumidifier_on else 'OFF'}, Fan: {'ON' if fan_on else 'OFF'}, Servo: {servo_position}deg")
 
                     # Log data
-                    log_data(time.time(), temperature, humidity, stage_name, current_mode, fan_on, dehumidifier_on, fan_on, dehumidifier_on, buzzer_on)
+                    log_data(time.time(), temperature, humidity, stage_name, current_mode, fan_on, dehumidifier_on, fan_on, dehumidifier_on, buzzer_on, servo_position)
 
             except RuntimeError as error:
                 print(error.args[0])
@@ -505,6 +562,8 @@ def main():
             time.sleep(0.5)
     finally:
         save_state() # Save state on exit
+        if servo:
+            servo.detach()
         lcd.clear()
         GPIO.cleanup()
 
