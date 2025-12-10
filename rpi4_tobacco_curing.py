@@ -127,7 +127,7 @@ MIDRIB_DRYING_LED_PIN = 21
 ORDERING_LED_PIN = 26
 
 AUTO_MODE_LED_PIN = 12
-MANUAL_MODE_LED_PIN = 25
+MANUAL_MODE_LED_PIN = 125
 
 # =============================
 # Relay configuration
